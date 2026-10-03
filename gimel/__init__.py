@@ -3,3 +3,4 @@
 
 __version__ = "1.0"
 NOMBRE = "GIMEL"
+REPOSITORIO = "GimelBroadcast/gimel"      # en GitHub: de sus «releases» salen las actualizaciones

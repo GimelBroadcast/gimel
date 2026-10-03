@@ -50,6 +50,31 @@ TEXTOS = {
     "&Idioma": "&Language",
     "A&yuda": "&Help",
     "&Acerca de %s": "&About %s",
+    "&Buscar actualizaciones…": "Check for &updates…",
+    "&Página de GIMEL en GitHub": "GIMEL &page on GitHub",
+    "Todavía no hay ninguna versión publicada.\nTienes la %s.": "No version has been published yet.\nYou have %s.",
+    "Tienes la última versión (%s).": "You have the latest version (%s).",
+    "Hay una versión nueva: %s (tienes la %s).": "There is a new version: %s (you have %s).",
+    "¿Abrir su página de descarga?": "Open its download page?",
+    "Antes de actualizar, guarda o descarta los cambios de configuración que tienes a medias.":
+        "Before updating, save or discard your pending configuration changes.",
+    "¿Descargarla e instalarla ahora? GIMEL se cerrará, Windows pedirá permiso de administrador y, al acabar, GIMEL se abrirá otra vez.":
+        "Download and install it now? GIMEL will close, Windows will ask for administrator "
+        "permission and, when it is done, GIMEL will open again.",
+    "Se está emitiendo: la emisión se cortará mientras se actualiza (cosa de un minuto) y después seguirá sola.":
+        "You are on air: the broadcast will stop while updating (about a minute) and then resume "
+        "by itself.",
+    "Descargando GIMEL %s…": "Downloading GIMEL %s…",
+    "Cancelar": "Cancel",
+    "GitHub no admite más consultas por ahora. Prueba dentro de un rato.":
+        "GitHub is not accepting more requests for now. Try again in a while.",
+    "No se ha podido consultar GitHub: %s": "Could not reach GitHub: %s",
+    "Esa versión no trae instalador.": "That version has no installer.",
+    "La descarga no ha llegado entera. Vuelve a intentarlo.": "The download is incomplete. Try again.",
+    "No se ha podido descargar: %s": "Could not download: %s",
+    "Sin permiso de administrador no se puede actualizar. No se ha cambiado nada.":
+        "Updating requires administrator permission. Nothing has been changed.",
+    "No se ha podido lanzar el instalador (código %d).": "Could not start the installer (code %d).",
     "Acerca de %s": "About %s",
     "Continuidad de radio por rotaciones horarias exactas.":
         "Radio playout by exact hourly rotations.",
@@ -332,7 +357,6 @@ TEXTOS = {
     "Elegir esta carpeta": "Choose this folder",
     "Elegir un audio": "Choose an audio",
     "Elegir una carpeta, una lista o un audio": "Choose a folder, a playlist or an audio",
-    "Cancelar": "Cancel",
     "No se ha podido leer la configuración: %s": "Could not read the configuration: %s",
 
     # ---------------------------------------------------------------- esquema: franjas

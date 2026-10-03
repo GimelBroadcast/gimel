@@ -2,7 +2,7 @@
 """
 Ventana principal de GIMEL (PyQt6).
 
-    menus      archivo, emision, ver, idioma y ayuda
+    menus      archivo, emision, ver, idioma y ayuda (con la actualizacion desde GitHub)
     cabecera   marca, emisora, piloto de emision y reloj
     lateral    las paginas, y guardar / descartar los cambios de configuracion
     centro     la pagina elegida
@@ -20,16 +20,20 @@ sigue donde estaba.
 import ctypes
 import os
 import sys
+import tempfile
+import threading
+import time
 from datetime import datetime
 
 from PyQt6.QtCore import QLibraryInfo, QLocale, QRectF, Qt, QTimer, QTranslator, QUrl
 from PyQt6.QtGui import (QActionGroup, QColor, QDesktopServices, QIcon, QKeySequence, QPainter,
                          QPalette, QPen, QPixmap)
 from PyQt6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QHBoxLayout, QLabel,
-                             QMainWindow, QMenuBar, QMessageBox, QStackedWidget, QVBoxLayout,
-                             QWidget)
+                             QMainWindow, QMenuBar, QMessageBox, QProgressDialog, QStackedWidget,
+                             QVBoxLayout, QWidget)
 
-from .. import NOMBRE, __version__
+from .. import NOMBRE, REPOSITORIO, __version__
+from .. import actualizacion
 from .. import config as modconfig
 from .. import idioma
 from ..idioma import N_, tr
@@ -112,6 +116,8 @@ class Ventana(QMainWindow):
         self._origen = nucleo.cfg             # para saber si la han cambiado desde el panel web
         self._sucio = False
         self._oscura = False
+        self._ocupada = False                 # a medio buscar o descargar una actualizacion
+        self._sin_preguntas = False           # cerrar sin mas: lo hace la actualizacion, que ya ha preguntado
         self.ctx = Contexto(self, nucleo, web)
         self.setWindowTitle("%s %s" % (NOMBRE, __version__))
         self.setWindowIcon(icono())
@@ -219,7 +225,10 @@ class Ventana(QMainWindow):
             grupo.addAction(a)
 
         m = barra.addMenu(tr("A&yuda"))
-        # aqui ira «Buscar actualizaciones» cuando el programa tenga repositorio
+        m.addAction(tr("&Buscar actualizaciones…"), self._actualizar)
+        m.addAction(tr("&Página de GIMEL en GitHub"),
+                    lambda: QDesktopServices.openUrl(QUrl("https://github.com/" + REPOSITORIO)))
+        m.addSeparator()
         m.addAction(tr("&Acerca de %s") % NOMBRE, self._acerca)
         self.setMenuBar(barra)                # la anterior, si la habia, se destruye
 
@@ -444,8 +453,120 @@ class Ventana(QMainWindow):
             "%s %s" % (NOMBRE, __version__),
             tr("Continuidad de radio por rotaciones horarias exactas."),
             "",
+            "https://github.com/" + REPOSITORIO,
+            "",
             tr("Carpeta de datos: %s") % self.nucleo.datos,
             "ffmpeg: %s" % (self.nucleo.ffmpeg or tr("no se encuentra")))))
+
+    # ------------------------------------------------------------ actualizacion
+
+    def _en_hilo(self, funcion, al_esperar=None):
+        """Lo lento (la red) va en otro hilo: la ventana sigue viva y el audio ni se entera."""
+        caja = {}
+
+        def trabajo():
+            try:
+                caja["bien"] = funcion()
+            except Exception as e:
+                caja["mal"] = e
+
+        hilo = threading.Thread(target=trabajo, daemon=True, name="actualizacion")
+        hilo.start()
+        while hilo.is_alive():
+            if al_esperar is not None:
+                al_esperar()
+            QApplication.processEvents()
+            time.sleep(0.02)
+        if "mal" in caja:
+            raise caja["mal"]
+        return caja.get("bien")
+
+    def _actualizar(self) -> None:
+        """Ayuda > Buscar actualizaciones: mira en GitHub y, si hay version nueva, la baja y la instala."""
+        if self._ocupada:
+            return
+        self._ocupada = True
+        try:
+            self._buscar_e_instalar()
+        finally:
+            self._ocupada = False
+
+    def _buscar_e_instalar(self) -> None:
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            v = self._en_hilo(actualizacion.ultima)
+        except actualizacion.Error as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, NOMBRE, str(e))
+            return
+        QApplication.restoreOverrideCursor()
+        if v is None:
+            QMessageBox.information(self, NOMBRE, tr("Todavía no hay ninguna versión publicada.\nTienes la %s.") % __version__)
+            return
+        if not actualizacion.es_nueva(v):
+            QMessageBox.information(self, NOMBRE, tr("Tienes la última versión (%s).") % __version__)
+            return
+        hay = tr("Hay una versión nueva: %s (tienes la %s).") % (v.version, __version__)
+        carpeta = actualizacion.instalada()
+        if not carpeta or not v.instalador:
+            # una copia sin instalar (o desde el codigo) no la sabe cambiar el instalador: se ensena donde esta
+            r = QMessageBox.question(self, NOMBRE, hay + "\n\n" + tr("¿Abrir su página de descarga?"))
+            if r == QMessageBox.StandardButton.Yes:
+                QDesktopServices.openUrl(QUrl(v.pagina))
+            return
+        if self._sucio:
+            QMessageBox.information(self, NOMBRE, hay + "\n\n" + tr(
+                "Antes de actualizar, guarda o descarta los cambios de configuración que tienes a medias."))
+            return
+        texto = hay + "\n\n" + tr("¿Descargarla e instalarla ahora? GIMEL se cerrará, Windows pedirá permiso de "
+                                  "administrador y, al acabar, GIMEL se abrirá otra vez.")
+        if self.nucleo.emisor.emitiendo:
+            texto += "\n\n" + tr("Se está emitiendo: la emisión se cortará mientras se actualiza (cosa de un "
+                                 "minuto) y después seguirá sola.")
+        if QMessageBox.question(self, NOMBRE, texto) != QMessageBox.StandardButton.Yes:
+            return
+        instalador = self._descargar(v)
+        if not instalador:
+            return
+        emitia = self.nucleo.emisor.emitiendo
+        try:
+            actualizacion.instalar(instalador, carpeta)
+        except actualizacion.Error as e:
+            QMessageBox.warning(self, NOMBRE, str(e))
+            return
+        if emitia:
+            actualizacion.marcar_reanudar(self.nucleo.datos)
+        self._sin_preguntas = True                        # el instalador espera a que GIMEL se cierre
+        self.close()
+
+    def _descargar(self, v) -> str:
+        """El instalador de `v`, con su barra de avance. Devuelve la ruta, o "" si se cancela o falla."""
+        barra = QProgressDialog(tr("Descargando GIMEL %s…") % v.version, tr("Cancelar"), 0, 1000, self)
+        barra.setWindowTitle(NOMBRE)
+        barra.setWindowModality(Qt.WindowModality.WindowModal)
+        barra.setMinimumDuration(0)
+        barra.setAutoClose(False)
+        barra.setAutoReset(False)
+        barra.setValue(0)
+        avance = [0.0]
+        cancelada = threading.Event()
+
+        def al_esperar():                                 # Qt solo se toca desde este hilo
+            barra.setValue(int(avance[0] * 1000))
+            if barra.wasCanceled():
+                cancelada.set()
+
+        try:
+            return self._en_hilo(lambda: actualizacion.descargar(
+                v, tempfile.gettempdir(), lambda f: avance.__setitem__(0, f), cancelada.is_set), al_esperar)
+        except actualizacion.Cancelada:
+            return ""
+        except actualizacion.Error as e:
+            barra.close()
+            QMessageBox.warning(self, NOMBRE, str(e))
+            return ""
+        finally:
+            barra.close()
 
     def _remontar(self) -> None:
         """Ha cambiado el idioma (desde el menu, desde Ajustes o desde el panel web)."""
@@ -456,7 +577,7 @@ class Ventana(QMainWindow):
     # ------------------------------------------------------------ el tic
 
     def _tic(self) -> None:
-        if idioma.actual() != self._idioma and QApplication.activeModalWidget() is None:
+        if idioma.actual() != self._idioma and QApplication.activeModalWidget() is None and not self._ocupada:
             self._remontar()                              # con una pregunta abierta, cuando se cierre
         e = self.nucleo.estado()
         ahora = e["reloj"]
@@ -499,6 +620,10 @@ class Ventana(QMainWindow):
             self.descartar()                              # la han cambiado desde el panel web
 
     def closeEvent(self, ev):
+        if self._sin_preguntas:
+            self._reloj_ui.stop()
+            ev.accept()
+            return
         if self.nucleo.emisor.emitiendo:
             r = QMessageBox.question(self, NOMBRE, tr("Se está emitiendo.\n¿Salir y parar la emisión?"))
             if r != QMessageBox.StandardButton.Yes:
