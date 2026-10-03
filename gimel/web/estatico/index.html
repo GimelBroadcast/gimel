@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GIMEL</title>
+<link rel="stylesheet" href="/estatico/estilo.css">
+</head>
+<body>
+<header>
+  <span class="marca">GIMEL</span>
+  <span class="emisora" id="emisora"></span>
+  <span class="aire" id="aire" data-t>PARADO</span>
+  <div>
+    <div class="reloj mono" id="reloj">--:--:--</div>
+    <div class="fecha" id="fecha"></div>
+  </div>
+</header>
+<nav id="nav">
+  <button data-pagina="emision" class="activa" data-t>Emisión</button>
+  <button data-pagina="franjas" data-t>Franjas</button>
+  <button data-pagina="senales" data-t>Señales horarias</button>
+  <button data-pagina="publicidad" data-t>Publicidad / desconexión</button>
+  <button data-pagina="eventos" data-t>Eventos</button>
+  <button data-pagina="cue" data-t>CUE y título</button>
+  <button data-pagina="icecast" data-t>Icecast</button>
+  <button data-pagina="ajustes" data-t>Ajustes</button>
+  <button data-pagina="registro" data-t>Registro</button>
+  <span class="hueco"></span>
+  <button class="guardar" id="guardar" data-t>Guardar cambios</button>
+</nav>
+<main>
+  <section class="pagina activa" id="p-emision">
+    <div class="error" id="error" hidden></div>
+    <div class="rejilla">
+      <div class="tarjeta sonando">
+        <h2 data-t>En emisión</h2>
+        <span class="chip t-silencio" id="s-tipo">—</span>
+        <div class="titulo" id="s-titulo" data-t>Parado</div>
+        <div class="artista" id="s-artista"></div>
+        <div class="barra"><div id="s-barra"></div></div>
+        <div class="tiempos mono"><span id="s-va">0:00</span><span class="resta" id="s-resta">0:00</span></div>
+        <div class="encima" id="s-encima"></div>
+        <div class="mandos">
+          <button class="boton verde" id="b-emitir">▶</button>
+          <button class="boton" id="b-saltar">» <span data-t>Saltar canción</span></button>
+          <button class="boton" id="b-rehacer">↻ <span data-t>Rehacer la pauta</span></button>
+        </div>
+      </div>
+      <div class="tarjeta">
+        <h2 id="a-nombre"></h2>
+        <div class="cuenta mono" id="a-cuenta">--:--</div>
+        <div class="dato" id="a-franja"></div>
+        <div class="vu">
+          <span>L</span><div class="canal"><div id="vu-l"></div></div>
+          <span>R</span><div class="canal"><div id="vu-r"></div></div>
+        </div>
+        <div class="lim" id="lim" data-t>limitador</div>
+        <div class="dato" id="salida"></div>
+        <div class="dato" id="analisis"></div>
+        <ul class="avisos" id="avisos"></ul>
+      </div>
+    </div>
+    <div class="tarjeta">
+      <h2 id="p-titulo" data-t>Pauta de la hora</h2>
+      <table>
+        <thead><tr><th data-t>Hora</th><th data-t>Tipo</th><th data-t>Título</th><th data-t>Duración</th><th data-t>Nota</th></tr></thead>
+        <tbody id="pauta"></tbody>
+      </table>
+      <div class="vacio" id="pauta-vacia" hidden data-t>Aún no hay pauta: falta elegir la carpeta de canciones o se está analizando la biblioteca.</div>
+    </div>
+  </section>
+  <section class="pagina" id="p-franjas"></section>
+  <section class="pagina" id="p-senales"></section>
+  <section class="pagina" id="p-publicidad"></section>
+  <section class="pagina" id="p-eventos"></section>
+  <section class="pagina" id="p-cue"></section>
+  <section class="pagina" id="p-icecast"></section>
+  <section class="pagina" id="p-ajustes"></section>
+  <section class="pagina" id="p-registro"></section>
+</main>
+<script src="/estatico/app.js"></script>
+</body>
+</html>
