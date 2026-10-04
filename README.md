@@ -48,7 +48,6 @@ discipline of a broadcast clock.
 - [Running from source](#running-from-source)
 - [Building](#building)
 - [Project layout](#project-layout)
-- [Tests and tools](#tests-and-tools)
 - [Languages](#languages)
 - [Troubleshooting](#troubleshooting)
 - [Licence](#licence)
@@ -157,9 +156,6 @@ update itself.
 From there, add what the station needs: jingles in the same time slot, the
 hourly audio in **Time signals**, ad or break blocks in **Ads / break**, a
 streaming server in **Icecast**.
-
-To try GIMEL without your own music, see the demo library under
-[Tests and tools](#tests-and-tools).
 
 ## The window
 
@@ -795,33 +791,6 @@ Everything that changes the state of the broadcast happens on a single thread.
 The interfaces leave orders in a queue and read a snapshot of the state; they
 never touch anything directly. Only the audio thread touches the voices being
 mixed.
-
-## Tests and tools
-
-GIMEL can be tested without a sound card and faster than real time. The
-simulator uses the same engine, the same planner and the same broadcaster as
-the real thing; the only difference is that the clock is driven by the audio
-itself, so an hour is simulated in well under a minute and the result does not
-depend on how fast the PC is.
-
-    python herramientas/generar_demo.py --config               # a synthetic library, and a configuration that uses it
-    python herramientas/simular.py --desde 10:52 --minutos 75  # simulated hours, checked to the sample
-    python herramientas/pruebas.py                             # 17 edge-case scenarios
-    python herramientas/pruebas.py jingles bloque              # only the scenarios whose name contains those words
-    python herramientas/prueba_tarjeta.py                      # the engine against the real sound card, in silence
-    python herramientas/servidor_cue.py                        # a receiver to test the CUE messages
-    python herramientas/comprobar_idiomas.py                   # untranslated texts in each language
-
-| Tool | What it does |
-|---|---|
-| `generar_demo.py` | Creates `demo/`: 36 songs, 8 jingles, 24 time signals, 10 spots, filler music and an intro jingle, all synthetic. Each song has its own melody, so transitions and cuts can be heard |
-| `simular.py` | Simulates hours of broadcast and checks that every time signal starts on its exact frame, that every block lasts what it should, that the CUE go out on time and that there is no silence outside the schedule |
-| `pruebas.py` | The test battery: starting inside a block, starting three seconds before the signal, a broken file, a file that disappears, a block that does not fit, changing the configuration while on air, audios added and removed while on air, and more |
-| `prueba_tarjeta.py` | Runs the engine against the real sound card for a minute, in silence unless you pass `--sonar`. `--lista` shows the available outputs |
-| `servidor_cue.py` | Receives CUE over HTTP (port 8951), TCP and UDP (8952) and prints them |
-| `comprobar_idiomas.py` | Lists the texts each language table is missing |
-| `compilar.py` | Builds the program and the installer |
-| `generar_icono.py` | Draws the icon |
 
 ## Languages
 
