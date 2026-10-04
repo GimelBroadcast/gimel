@@ -758,11 +758,9 @@ is not higher will not be offered to anyone.
 ## Project layout
 
     gimel/            the program
-    herramientas/     demo, simulator, test battery, CUE receiver, build script
     instalador/       the Windows installer and uninstaller
     recursos/         the icon
     datos/            config.json, rotacion.json, analisis.db, registro/ (created on first run)
-    demo/             demonstration library (created by generar_demo.py)
 
 Inside `gimel/`:
 
