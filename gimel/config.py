@@ -67,7 +67,8 @@ class Franja:
     dur_min: float = 0.0             # descartar canciones mas cortas (0 = sin limite)
     dur_max: float = 0.0             # descartar canciones mas largas (0 = sin limite)
     jingles: bool = False
-    jingles_origen: str = ""
+    jingles_origen: str = ""         # carpeta o lista
+    jingles_orden: str = "aleatorio"  # aleatorio | secuencial
     jingles_cada: int = 1            # un jingle cada N cambios de cancion
     jingles_modo: str = "encima"     # encima (pisando el cruce) | entre (cancion, jingle, cancion)
     senal: bool = True               # dar la senal horaria en esta franja

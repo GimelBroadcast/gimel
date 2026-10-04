@@ -46,6 +46,7 @@ class Emisor:
     AVANCE = 2.0              # s de antelacion con que un cruce se entrega al motor
     MARGEN_ANCLA = 1.5        # s que se suman al fundido previo para entregar un ancla
     PREPARAR = 25.0           # s de antelacion con que se arranca un decodificador
+    MIRAR = 10.0              # cada cuantos s se mira si han cambiado las carpetas y las listas
 
     def __init__(self, cfg, bib, rot, motor, ffmpeg: str, soxr: bool = False,
                  registro=None, cues=None, titulo=None):
@@ -84,7 +85,9 @@ class Emisor:
         self._t_guardar = 0.0
         self._t_foto = 0.0
         self._t_reabrir = 0.0
-        self._foto = {"emitiendo": False, "pauta": [], "avisos": []}
+        self._t_mirar = 0.0
+        self._cambios = bib.cambios       # hasta donde se han tenido en cuenta los cambios de la biblioteca
+        self._foto ={"emitiendo": False, "pauta": [], "avisos": []}
         for st in rot.e.values():         # lo que sono antes de cerrar tambien cuenta
             if isinstance(st, dict):
                 self.sonadas.extend(st.get("rec", [])[-60:])
@@ -183,6 +186,9 @@ class Emisor:
         self._ordenes()
         self._eventos()
         ahora = time.monotonic()
+        if ahora - self._t_mirar > self.MIRAR:
+            self._t_mirar = ahora
+            self._mirar_biblioteca()
         if self.emitiendo:
             self._vigilar()
             self._asegurar_planes()
@@ -229,6 +235,32 @@ class Emisor:
                     self._replanificar()
                 self._t_previa = 0.0
 
+    def _mirar_biblioteca(self) -> None:
+        """
+        Las carpetas y las listas pueden cambiar con el programa en marcha. Se
+        pide a la biblioteca que las vuelva a mirar (lo hace como mucho una vez
+        por minuto) y, si han entrado o salido audios, se vuelve a elegir lo
+        que queda de pauta: lo nuevo entra en su rotacion y lo que ya no esta
+        sale de ella sin llegar a fallar en antena.
+        """
+        for o in modconfig.origenes(self.cfg):
+            self.bib.listar(o)
+        cambios = self.bib.cambios
+        if cambios == self._cambios:
+            return
+        if self.emitiendo and self.planes:
+            if self._al_caer():
+                return                                    # con un cambio de audio encima, no: despues
+            self._replantear()
+        self._cambios = cambios
+
+    def _al_caer(self) -> bool:
+        """Si lo siguiente de la pauta entra ya: cambiarlo ahora por otro no le daria tiempo a decodificarse."""
+        ahora = self.motor.ahora()
+        for _, t in self._proximos():
+            return t - ahora < self.PREPARAR + 5.0
+        return False
+
     def _vista_previa(self) -> None:
         """
         Parado: la rotacion de lo que queda de hora, como si se empezara a
@@ -254,6 +286,7 @@ class Emisor:
         self.actual = None
         self.jingle_actual = None
         self._saltos = self.motor.saltos
+        self._cambios = self.bib.cambios                  # la pauta se hace ahora, con lo que hay
         self.registro.escribir(self.motor.ahora(), "sistema", N_("Comienza la emisión"))
 
     def _detener(self) -> None:
@@ -341,7 +374,8 @@ class Emisor:
         """
         Pase para planificar las anclas de una hora. La musica de `planes` que
         aun no ha sonado sigue en su cola: sin contarla, el relleno de un
-        bloque nuevo repetiria el de otro que todavia esta por salir.
+        bloque nuevo repetiria el de otro que todavia esta por salir. Con los
+        jingles pasa lo mismo.
         """
         pase = Pase()
         for plan in planes:
@@ -349,6 +383,11 @@ class Emisor:
                 for it in (b.canciones if isinstance(b, Tramo) else b.piezas):
                     if it.tipo in ("cancion", "relleno") and it.estado in estados:
                         pase.planeadas.append(it.pista.ruta)
+                    elif it.tipo in ("jingle", "jingle_publi") and it.estado in estados:
+                        pase.ocupados.append(it.pista.ruta)
+                    j = getattr(it, "jingle", None)       # el del cruce de salida de una cancion
+                    if j is not None and j.estado in estados:
+                        pase.ocupados.append(j.pista.ruta)
         return pase
 
     def _poner_hora(self, b: Tramo) -> None:
@@ -367,18 +406,27 @@ class Emisor:
         motor, de aqui en adelante y en orden, para que nada se repita.
         """
         pase = Pase(self.sonadas, self.cont_j, self.ultimo_jingle)
+        # lo que ya ha sonado esta descontado de su rotacion; lo que esta en la pauta sin
+        # haber salido, no: se apunta aqui para que no se vuelva a elegir
         for plan in self.planes:
             for b in plan.bloques:
                 if not isinstance(b, Tramo):
                     for it in b.piezas:
+                        if it.estado not in (PLAN, PREP, PROG):
+                            continue
                         if it.tipo in ("jingle", "jingle_publi"):
-                            pase.ocupados.add(it.pista.ruta)
-                        elif it.tipo == "relleno" and it.estado in (PLAN, PREP, PROG):
+                            pase.ocupados.append(it.pista.ruta)
+                        elif it.tipo == "relleno":
                             pase.planeadas.append(it.pista.ruta)  # por si sale de la carpeta de las canciones
         for ip, plan in enumerate(self.planes):
             for b in plan.bloques[(self.ib if ip == 0 else 0):]:
                 if not isinstance(b, Tramo):
                     continue
+                for c in b.canciones[:max(0, b.ic - 1)]:
+                    if c.jingle is not None and c.jingle.estado == PROG:
+                        # el del cruce recien entregado al motor, que aun no ha empezado a sonar
+                        pase.ocupados.append(c.jingle.pista.ruta)
+                        pase.ultimo_jingle = c.jingle.pista.ruta
                 if solo_siguiente and ip == 0:            # esta hora se queda como esta
                     for c in b.canciones:
                         pase.vistos.append(c.pista.ruta)
@@ -386,7 +434,7 @@ class Emisor:
                             pase.planeadas.append(c.pista.ruta)
                     for c in b.canciones[max(0, b.ic - 1):-1]:    # los cruces que le quedan
                         if c.jingle is not None:
-                            pase.ocupados.add(c.jingle.pista.ruta)
+                            pase.ocupados.append(c.jingle.pista.ruta)
                             pase.cont_j, pase.ultimo_jingle = 0, c.jingle.pista.ruta
                         else:
                             pase.cont_j += 1

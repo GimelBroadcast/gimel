@@ -18,6 +18,7 @@ sigue donde estaba.
 """
 
 import ctypes
+import html
 import os
 import sys
 import tempfile
@@ -28,14 +29,15 @@ from datetime import datetime
 from PyQt6.QtCore import QLibraryInfo, QLocale, QRectF, Qt, QTimer, QTranslator, QUrl
 from PyQt6.QtGui import (QActionGroup, QColor, QDesktopServices, QIcon, QKeySequence, QPainter,
                          QPalette, QPen, QPixmap)
-from PyQt6.QtWidgets import (QApplication, QButtonGroup, QFileDialog, QHBoxLayout, QLabel,
+from PyQt6.QtWidgets import (QApplication, QButtonGroup, QDialog, QFileDialog, QHBoxLayout, QLabel,
                              QMainWindow, QMenuBar, QMessageBox, QProgressDialog, QStackedWidget,
-                             QVBoxLayout, QWidget)
+                             QTextBrowser, QVBoxLayout, QWidget)
 
 from .. import NOMBRE, REPOSITORIO, __version__
 from .. import actualizacion
 from .. import config as modconfig
 from .. import idioma
+from .. import novedades as modnovedades
 from ..idioma import N_, tr
 from . import estilo
 from .paginas import (PaginaAjustes, PaginaCue, PaginaEmision, PaginaRegistro, PaginaSenales,
@@ -568,6 +570,38 @@ class Ventana(QMainWindow):
         finally:
             barra.close()
 
+    def novedades(self) -> None:
+        """
+        Recien actualizado: lo que trae la version nueva, una sola vez. La
+        ventana no espera a que la cierren (open, no exec): si al abrirse hay
+        que volver al aire, nada de esto lo retrasa.
+        """
+        pendientes = modnovedades.pendientes(self.nucleo.datos)
+        if not pendientes:
+            return
+        d = QDialog(self)
+        d.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        d.setWindowTitle(tr("Novedades de %s") % NOMBRE)
+        caja = QVBoxLayout(d)
+        caja.setContentsMargins(22, 20, 22, 18)
+        caja.setSpacing(14)
+        titulo = QLabel(tr("%s se ha actualizado a la versión %s") % (NOMBRE, __version__))
+        titulo.setFont(estilo.texto(13, True))
+        caja.addWidget(titulo)
+        texto = QTextBrowser()
+        texto.setHtml("".join(
+            "<p style='color: %s; font-weight: 700;'>%s</p><ul>%s</ul>" % (
+                estilo.ACENTO, tr("Versión %s") % version,
+                "".join("<li style='margin-bottom: 7px;'>%s</li>" % html.escape(tr(c)) for c in cambios))
+            for version, cambios in pendientes))
+        caja.addWidget(texto, 1)
+        pie = QHBoxLayout()
+        pie.addStretch(1)
+        pie.addWidget(boton(tr("Cerrar"), "acento", d.accept))
+        caja.addLayout(pie)
+        d.resize(600, 420)
+        d.open()
+
     def _remontar(self) -> None:
         """Ha cambiado el idioma (desde el menu, desde Ajustes o desde el panel web)."""
         self.cfg.idioma = idioma.actual()     # que un Guardar posterior no vuelva al de antes
@@ -705,4 +739,5 @@ def lanzar(nucleo, web=None, emitir: bool = False) -> int:
     ventana.show()
     if emitir:
         QTimer.singleShot(700, ventana.p_emision.emitir)
+    QTimer.singleShot(1500, ventana.novedades)            # detras de lo de emitir: lo primero es volver al aire
     return app.exec()

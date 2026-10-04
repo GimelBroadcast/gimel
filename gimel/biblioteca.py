@@ -60,6 +60,8 @@ class Biblioteca:
     def __init__(self, carpeta_datos: str, ffmpeg: str, hilos: int = 0):
         self.ffmpeg = ffmpeg
         self.cache = CacheAnalisis(os.path.join(carpeta_datos, "analisis.db"))
+        self.cambios = 0              # sube cuando un origen gana o pierde ficheros y cuando acaba un analisis
+        self._dudosos = set()         # origenes que tenian audios y en la ultima pasada han salido vacios
         self._listas = {}             # clave del origen -> (momento, [rutas])
         self._stat = {}               # ruta -> (tamano, fecha)
         self._mem = {}                # ruta -> Pista, ya contrastada con el fichero
@@ -120,13 +122,23 @@ class Biblioteca:
             if trabajo is None:
                 return
             clave, origen = trabajo
+            viejo = self._listas.get(clave)
             try:
                 rutas = self._recorrer(origen)
             except Exception:
                 rutas = []
+            if viejo is not None and viejo[1] and not rutas and clave not in self._dudosos:
+                # tenia audios y de pronto ninguno: puede ser un disco de red que no
+                # contesta. No se da por vacio hasta que lo este dos pasadas seguidas
+                self._dudosos.add(clave)
+                rutas = viejo[1]
+            else:
+                self._dudosos.discard(clave)
             self._listas[clave] = (time.monotonic(), rutas)
             with self._lock:
                 self._escaneando.discard(clave)
+                if viejo is not None and viejo[1] != rutas:
+                    self.cambios += 1                     # han anadido o quitado ficheros
             for r in rutas:                               # lo que falte por analizar, sin prisa
                 if r not in self._mem:
                     self.pista(r)
@@ -235,6 +247,7 @@ class Biblioteca:
             self._mem[ruta] = p
             with self._lock:
                 self._pend.pop(ruta, None)
+                self.cambios += 1                         # ya se puede contar con el
             self.hechas += 1
 
     def pendientes(self) -> int:

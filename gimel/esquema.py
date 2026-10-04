@@ -62,7 +62,8 @@ FRANJA = [
       min=0, max=36000, paso=10, sufijo="s"),
     t("Jingles"),
     c("jingles", "Poner jingles entre canciones", "bool"),
-    c("jingles_origen", "Carpeta de jingles", "origen", modo="carpeta"),
+    c("jingles_origen", "Carpeta o lista de jingles", "origen", modo="carpeta"),
+    c("jingles_orden", "Orden de los jingles", "opcion", opciones=ORDEN),
     c("jingles_cada", "Un jingle cada", "entero", min=1, max=99, sufijo="cambios de canción"),
     c("jingles_modo", "Colocación", "opcion",
       "Encima: el jingle suena sobre el cruce, pisando el final de una canción y el "

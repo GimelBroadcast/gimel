@@ -105,7 +105,7 @@ QPushButton[clase="dia"] { padding: 0; min-width: 30px; max-width: 30px; min-hei
                            background: #0d1014; color: %(TENUE)s; }
 QPushButton[clase="dia"]:checked { background: %(ACENTO)s; color: #111; border-color: %(ACENTO)s; font-weight: 700; }
 
-QLineEdit, QPlainTextEdit, QSpinBox, QDoubleSpinBox, QComboBox {
+QLineEdit, QPlainTextEdit, QTextBrowser, QSpinBox, QDoubleSpinBox, QComboBox {
     background: #0d1014; border: 1px solid %(BORDE)s; border-radius: 5px; padding: 5px 8px;
     selection-background-color: #3b82f6; }
 QLineEdit:focus, QPlainTextEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: %(ACENTO)s; }

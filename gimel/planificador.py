@@ -248,7 +248,7 @@ class Pase:
     def __init__(self, vistos=(), cont_j: int = 0, ultimo_jingle: str = ""):
         self.vistos = list(vistos)        # lo sonado y lo ya planificado, en orden
         self.planeadas = []               # canciones y relleno en la pauta que aun no han sonado
-        self.ocupados = set()             # jingles y piezas ya apalabrados
+        self.ocupados = []                # jingles y piezas en la pauta que aun no han sonado
         self.cont_j = cont_j              # cruces desde el ultimo jingle
         self.ultimo_jingle = ultimo_jingle
 
@@ -288,10 +288,8 @@ class Planificador:
     def _primero(self, origen: str, orden: str, ocupados):
         """El siguiente audio de una rotacion que no este ya comprometido en el plan."""
         cola = self.sur.cola(origen, orden) if origen else []
-        for p in cola:
-            if p.ruta not in ocupados:
-                return p
-        return cola[0] if cola else None
+        libres = self._sin_planear(cola, ocupados)
+        return libres[0] if libres else (cola[0] if cola else None)
 
     @staticmethod
     def _sin_planear(cola: list, planeadas: list) -> list:
@@ -342,13 +340,13 @@ class Planificador:
         a.piezas.append(it)
         a.dur = self.avance_corto(p)
         if franja.jingle_tras_senal and franja.jingles_origen:
-            pj = self._primero(franja.jingles_origen, "aleatorio", ocupados)
+            pj = self._primero(franja.jingles_origen, franja.jingles_orden, ocupados)
             if pj is not None:
-                j = Item("jingle", pj, franja.jingles_origen, "aleatorio")
+                j = Item("jingle", pj, franja.jingles_origen, franja.jingles_orden)
                 j.desfase = a.dur
                 a.piezas.append(j)
                 a.dur += self.avance_corto(pj)
-                ocupados.add(pj.ruta)
+                ocupados.append(pj.ruta)
         return a
 
     def _ancla_evento(self, h0: float, ev, ocupados, plan):
@@ -356,7 +354,7 @@ class Planificador:
         if p is None:
             plan.incompleto |= self.sur.pendiente(ev.origen)
             return None
-        ocupados.add(p.ruta)
+        ocupados.append(p.ruta)
         a = AnclaAudio("evento", h0 + ev.desfase())
         a.nombre = ev.nombre
         a.piezas.append(Item("evento", p, ev.origen, ev.orden))
@@ -367,20 +365,23 @@ class Planificador:
         jingle = salida = None
         dur_salida = 0.0
         if b.jingle:
+            # el suyo, si lo tiene; si no, uno de los de la franja y en el orden de la franja
             origen = b.jingle_origen or franja.jingles_origen
-            pj = self._primero(origen, "aleatorio", ocupados)
+            orden = "aleatorio" if b.jingle_origen else franja.jingles_orden
+            pj = self._primero(origen, orden, ocupados)
             if pj is not None:
-                jingle = Item("jingle_publi", pj, origen, "aleatorio")
-                ocupados.add(pj.ruta)
+                jingle = Item("jingle_publi", pj, origen, orden)
+                ocupados.append(pj.ruta)
             elif origen:
                 plan.incompleto |= self.sur.pendiente(origen)
         if b.jingle_salida:
             origen = b.jingle_salida_origen or franja.jingles_origen
-            pj = self._primero(origen, "aleatorio", ocupados)
+            orden = "aleatorio" if b.jingle_salida_origen else franja.jingles_orden
+            pj = self._primero(origen, orden, ocupados)
             if pj is not None:
-                salida = Item("jingle_publi", pj, origen, "aleatorio")
+                salida = Item("jingle_publi", pj, origen, orden)
                 dur_salida = self.avance_corto(pj)
-                ocupados.add(pj.ruta)
+                ocupados.append(pj.ruta)
         a = AnclaBloque(b, 0.0, jingle, salida, dur_salida)
         programada = h0 + b.desfase()
         if b.referencia == "silencio":
@@ -628,8 +629,11 @@ class Planificador:
             cands = self.sur.cola(general.canciones, general.orden, general.dur_min, general.dur_max)
         jq = []
         if fr.jingles and fr.jingles_origen:
-            todos = self.sur.cola(fr.jingles_origen, "aleatorio")
-            jq = [p for p in todos if p.ruta not in ocupados] or todos
+            # los jingles salen de su rotacion como las canciones de la suya: en el orden de
+            # la baraja (o de la lista), y cada uno ya puesto en la pauta se lleva su proximo
+            # pase. Asi suenan todos los de la carpeta antes de que vuelva ninguno.
+            todos = self.sur.cola(fr.jingles_origen, fr.jingles_orden)
+            jq = self._sin_planear(todos, ocupados) or todos
         cada = max(1, int(fr.jingles_cada))
 
         def toca(est):
@@ -652,7 +656,7 @@ class Planificador:
                 c.extra = 0.0
                 return
             if c.jingle is None or c.jingle.pista.ruta != pj.ruta or c.jingle.estado not in (PLAN, PREP):
-                c.jingle = Item("jingle", pj, fr.jingles_origen, "aleatorio")
+                c.jingle = Item("jingle", pj, fr.jingles_origen, fr.jingles_orden)
             c.extra = self.extra_jingle(fr, pj)
 
         def cancion(p):
@@ -778,7 +782,7 @@ class Planificador:
         cont, ultimo = pase.cont_j, pase.ultimo_jingle
         for c in (([cab] if cab is not None else []) + nuevas)[:-1]:
             if c.jingle is not None:
-                ocupados.add(c.jingle.pista.ruta)
+                ocupados.append(c.jingle.pista.ruta)
                 cont, ultimo = 0, c.jingle.pista.ruta
             else:
                 cont += 1

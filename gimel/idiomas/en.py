@@ -75,6 +75,22 @@ TEXTOS = {
     "Sin permiso de administrador no se puede actualizar. No se ha cambiado nada.":
         "Updating requires administrator permission. Nothing has been changed.",
     "No se ha podido lanzar el instalador (código %d).": "Could not start the installer (code %d).",
+    "Novedades de %s": "What's new in %s",
+    "%s se ha actualizado a la versión %s": "%s has been updated to version %s",
+    "Versión %s": "Version %s",
+    "Cerrar": "Close",
+    "Los jingles se reparten bien: suenan todos los de la carpeta o la lista antes de que se repita ninguno. Antes unos pocos salían mucho más que el resto.":
+        "Jingles are now spread evenly: every jingle in the folder or playlist plays before any of "
+        "them repeats. Before, a few of them came up far more often than the rest.",
+    "Cada franja elige el orden de sus jingles: aleatorio o secuencial.":
+        "Each time slot chooses the order of its jingles: shuffle or sequential.",
+    "Las canciones y los jingles que se añaden a una carpeta o a una lista, o se quitan de ella, entran en la rotación o salen de ella en un par de minutos, sin reiniciar el programa.":
+        "Songs and jingles added to a folder or playlist, or removed from it, enter or leave the "
+        "rotation within a couple of minutes, without restarting the program.",
+    "«Buscar actualizaciones» ya no da error de certificado en los equipos en los que fallaba.":
+        "“Check for updates” no longer fails with a certificate error on the computers where it did.",
+    "Después de actualizar, GIMEL enseña las novedades de la versión la primera vez que se abre.":
+        "After an update, GIMEL shows what is new in the version the first time it opens.",
     "Acerca de %s": "About %s",
     "Continuidad de radio por rotaciones horarias exactas.":
         "Radio playout by exact hourly rotations.",
@@ -380,7 +396,8 @@ TEXTOS = {
     "Descartar las de más de": "Skip those longer than",
     "0 = sin límite.": "0 = no limit.",
     "Poner jingles entre canciones": "Play jingles between songs",
-    "Carpeta de jingles": "Jingles folder",
+    "Carpeta o lista de jingles": "Jingles folder or playlist",
+    "Orden de los jingles": "Jingle order",
     "Un jingle cada": "One jingle every",
     "cambios de canción": "song changes",
     "Colocación": "Placement",

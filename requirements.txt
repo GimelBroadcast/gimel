@@ -1,5 +1,6 @@
 numpy>=1.24
-sounddevice>=0.4.6
-PyQt6>=6.4
-flask>=2.3
+sounddevice>=0.4.6    # salida por tarjeta; sin el, solo Icecast ("Sin tarjeta")
+PyQt6>=6.4            # ventana de escritorio; sin el, solo el panel web
+flask>=2.3            # panel web; sin el, solo la ventana
+certifi               # autoridades de certificacion para la actualizacion; sin el, solo las que tenga Windows
 # y, fuera de pip, ffmpeg en el PATH o ffmpeg.exe junto a main.py (winget install Gyan.FFmpeg)

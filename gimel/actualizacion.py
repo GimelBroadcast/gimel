@@ -24,6 +24,7 @@ import ctypes
 import hashlib
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.error
@@ -76,10 +77,30 @@ def es_nueva(v: Version) -> bool:
     return numeros(v.version) > numeros(__version__)
 
 
+def _contexto() -> ssl.SSLContext:
+    """
+    Con que autoridades se comprueba que quien contesta es GitHub: las del
+    almacen de Windows (donde estan tambien las de un antivirus o un proxy que
+    inspeccione el trafico) y, ademas, las de certifi, que viajan con el
+    programa. Las de Windows solas no bastan: Windows se baja cada autoridad la
+    primera vez que le hace falta a el, y a Python solo le ensena las que ya
+    tiene. En un equipo que nunca ha entrado en GitHub, o en el servidor de las
+    descargas (que va firmado por otra), la conexion daba error de certificado.
+    """
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(certifi.where())
+    except (ImportError, OSError):
+        pass                                              # sin certifi, con lo que tenga Windows
+    return ctx
+
+
 def ultima(espera: float = 15.0):
     """La ultima version publicada, o None si aun no hay ninguna. Lanza Error si no se puede saber."""
     try:
-        with urllib.request.urlopen(urllib.request.Request(API, headers=AGENTE), timeout=espera) as r:
+        with urllib.request.urlopen(urllib.request.Request(API, headers=AGENTE), timeout=espera,
+                                    context=_contexto()) as r:
             d = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -115,7 +136,7 @@ def descargar(v: Version, carpeta: str, progreso=None, cancelar=None) -> str:
     hecho = 0
     try:
         with urllib.request.urlopen(urllib.request.Request(v.instalador, headers={"User-Agent": AGENTE["User-Agent"]}),
-                                    timeout=30) as r, open(parte, "wb") as fh:
+                                    timeout=30, context=_contexto()) as r, open(parte, "wb") as fh:
             total = v.tamano or int(r.headers.get("Content-Length") or 0)
             while True:
                 if cancelar is not None and cancelar():
