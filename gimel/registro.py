@@ -22,7 +22,8 @@ CABECERA = ("fecha", "hora", "tipo", "titulo", "artista", "segundos", "nota", "f
 NOMBRES = {"cancion": N_("Canción"), "jingle": N_("Jingle"), "senal": N_("Señal horaria"),
            "evento": N_("Evento"), "cuna": N_("Cuña"), "relleno": N_("Relleno"),
            "jingle_publi": N_("Jingle de bloque"), "cue": N_("CUE"), "silencio": N_("Silencio"),
-           "sistema": N_("Sistema")}
+           "sistema": N_("Sistema"), "auxiliar": N_("Auxiliar"), "botonera": N_("Botonera"),
+           "enlace": N_("Enlace con la cadena"), "emergencia": N_("Emergencia")}
 
 
 class Registro:

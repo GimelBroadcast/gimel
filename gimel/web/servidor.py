@@ -75,7 +75,7 @@ def crear_app(nucleo) -> Flask:
                     tr("El panel de GIMEL no tiene contraseña y por eso solo atiende al propio "
                        "equipo. Ponle una en Ajustes > Panel web para entrar desde la red."), 403,
                     mimetype="text/plain; charset=utf-8")
-            libre = request.path in ("/", "/api/login", "/api/textos", "/favicon.ico") or \
+            libre = request.path in ("/", "/locutor", "/api/login", "/api/textos", "/favicon.ico") or \
                 request.path.startswith("/estatico/")
             if not libre and not session.get("dentro"):
                 return jsonify(error="clave"), 401
@@ -87,6 +87,9 @@ def crear_app(nucleo) -> Flask:
     def cabeceras(resp):
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["X-Frame-Options"] = "DENY"
+        if request.path == "/api/certificado":
+            # el certificado es HTML hecho con lo del registro: que no pueda ejecutar nada
+            resp.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
         if request.path.startswith("/api/"):
             resp.headers["Cache-Control"] = "no-store"
         return resp
@@ -138,13 +141,16 @@ def crear_app(nucleo) -> Flask:
         if d["web"]["clave"]:
             d["web"]["clave"] = OCULTA
         nuevo = lambda clase: modconfig.a_dict(modconfig.nuevo(clase))
+        if d["reserva"]["clave"]:
+            d["reserva"]["clave"] = OCULTA
         return jsonify(config=d, esquema=traducido(), plantillas_cue=PLANTILLAS_CUE,
-                       salidas=nucleo.salidas(), dias=list(idioma.dias_cortos()),
+                       salidas=nucleo.salidas(), entradas=nucleo.entradas(), dias=list(idioma.dias_cortos()),
                        nuevos={"franja": nuevo(modconfig.Franja),
                                "bloque": nuevo(modconfig.BloquePubli),
                                "evento": nuevo(modconfig.EventoFijo),
                                "destino_cue": nuevo(modconfig.DestinoCue),
-                               "icecast": nuevo(modconfig.Icecast)})
+                               "icecast": nuevo(modconfig.Icecast),
+                               "grabacion": nuevo(modconfig.Grabacion)})
 
     @app.post("/api/config")
     def guardar_config():
@@ -153,6 +159,8 @@ def crear_app(nucleo) -> Flask:
             return jsonify(ok=False, mensaje=tr("configuración ilegible")), 400
         if isinstance(d.get("web"), dict) and d["web"].get("clave") == OCULTA:
             d["web"]["clave"] = nucleo.cfg.web.clave
+        if isinstance(d.get("reserva"), dict) and d["reserva"].get("clave") == OCULTA:
+            d["reserva"]["clave"] = nucleo.cfg.reserva.clave
         try:
             aviso = nucleo.guardar_config_dict(d)
         except Exception as e:
@@ -166,7 +174,7 @@ def crear_app(nucleo) -> Flask:
 
     @app.get("/api/explorar")
     def explorar():
-        return jsonify(nucleo.explorar(request.args.get("ruta", "")))
+        return jsonify(nucleo.explorar(request.args.get("ruta", ""), request.args.get("todos") == "1"))
 
     @app.get("/api/origen")
     def origen():
@@ -182,6 +190,57 @@ def crear_app(nucleo) -> Flask:
         dias = nucleo.registro.dias()
         fecha = request.args.get("fecha") or (dias[0] if dias else "")
         return jsonify(dias=dias, fecha=fecha, filas=nucleo.registro.leer(fecha) if fecha else [])
+
+    @app.get("/locutor")
+    def locutor():
+        return send_from_directory(estatico, "locutor.html")
+
+    # ---- listas auxiliares, botonera y preescucha (manejo en directo: se aplica al momento)
+    @app.get("/api/aux")
+    def aux_estado():
+        try:
+            version = int(request.args.get("v", "-1"))
+        except ValueError:
+            version = -1
+        return jsonify(nucleo.aux.estado(version))
+
+    @app.post("/api/aux")
+    def aux_accion():
+        bien, mensaje = nucleo.aux.accion(request.get_json(silent=True) or {})
+        return jsonify(ok=bien, mensaje=mensaje)
+
+    @app.post("/api/intro")
+    def intro():
+        d = request.get_json(silent=True) or {}
+        if d.get("preescucha"):
+            bien, mensaje = nucleo.marcar_intro_preescucha()
+        else:
+            bien, mensaje = nucleo.marcar_intro(str(d.get("ruta") or ""), d.get("segundos"))
+        return jsonify(ok=bien, mensaje=mensaje)
+
+    @app.get("/api/grabaciones")
+    def grabaciones():
+        return jsonify(nucleo.grabaciones.estado())
+
+    @app.post("/api/pauta")
+    def pauta():
+        d = request.get_json(silent=True) or {}
+        try:
+            texto = nucleo.importar_pauta(str(d.get("fichero", "")), str(d.get("destino", "")),
+                                          "publicidad" if d.get("tipo") == "publicidad" else "musica",
+                                          str(d.get("fecha") or ""), str(d.get("audios") or ""))
+        except Exception as e:
+            return jsonify(ok=False, mensaje=str(e))
+        return jsonify(ok=True, mensaje=texto)
+
+    @app.get("/api/certificado")
+    def certificado():
+        a = request.args
+        try:
+            pagina = nucleo.certificado(a.get("desde", ""), a.get("hasta", ""), a.get("filtro", ""))
+        except ValueError:
+            return Response(tr("Fechas ilegibles."), 400, mimetype="text/plain; charset=utf-8")
+        return Response(pagina, mimetype="text/html; charset=utf-8")
 
     @app.post("/api/cue/probar")
     def cue_probar():

@@ -112,16 +112,24 @@ class PaginaEmision(QWidget):
         self.va = QLabel("")
         self.va.setFont(estilo.mono(11))
         self.va.setObjectName("tenue")
+        self.intro = QLabel("")
+        self.intro.setFont(estilo.mono(16, True))
+        self.intro.setStyleSheet("color: #fbbf24;")
+        self.intro.setToolTip(tr("Cuenta atrás de la intro: hasta que entra la voz"))
         self.resta = QLabel("")
         self.resta.setFont(estilo.mono(24, True))
         tiempos.addWidget(self.va, 0, Qt.AlignmentFlag.AlignTop)
         tiempos.addStretch(1)
+        tiempos.addWidget(self.intro)
+        tiempos.addSpacing(18)
         tiempos.addWidget(self.resta)
         t.caja.addLayout(tiempos)
         self.encima = EtiquetaCorta(estilo.texto(10.5, True), estilo.COLOR_TIPO["jingle"])
         t.caja.addWidget(self.encima)
         self.despues = EtiquetaCorta(estilo.texto(10.5), estilo.TENUE)
         t.caja.addWidget(self.despues)
+        self.auxiliares = EtiquetaCorta(estilo.texto(10.5, True), "#c084fc")
+        t.caja.addWidget(self.auxiliares)
         self.aviso = EtiquetaCorta(estilo.texto(9.5), "#fbbf24")
         t.caja.addWidget(self.aviso)
         t.caja.addStretch(1)
@@ -136,9 +144,14 @@ class PaginaEmision(QWidget):
         self.b_rehacer = boton("↻  " + tr("Rehacer la pauta"), "", lambda: ctx.nucleo.replanificar())
         self.b_rehacer.setMinimumHeight(46)
         self.b_rehacer.setToolTip(tr("Volver a planificar lo que queda de hora desde ahora mismo"))
+        self.b_intro = boton(tr("Marcar intro"), "", self._marcar_intro)
+        self.b_intro.setMinimumHeight(46)
+        self.b_intro.setToolTip(tr("Púlsalo justo cuando entra la voz de la canción que suena: queda "
+                                   "apuntado dónde acaba su intro, para la cuenta atrás"))
         mandos.addWidget(self.b_emitir)
         mandos.addWidget(self.b_saltar)
         mandos.addWidget(self.b_rehacer)
+        mandos.addWidget(self.b_intro)
         mandos.addStretch(1)
         t.caja.addLayout(mandos)
         arriba.addWidget(t, 5)
@@ -170,6 +183,10 @@ class PaginaEmision(QWidget):
         if mensaje:
             self.ctx.avisar(mensaje, not bien)
 
+    def _marcar_intro(self) -> None:
+        bien, mensaje = self.ctx.nucleo.marcar_intro()
+        self.ctx.avisar(mensaje, not bien)
+
     def conmutar(self) -> None:
         if self.ctx.nucleo.emisor.emitiendo:
             self.ctx.nucleo.detener()
@@ -190,6 +207,7 @@ class PaginaEmision(QWidget):
             reestilar(self.b_emitir)
             self.b_saltar.setEnabled(emite)
             self.b_rehacer.setEnabled(emite)
+            self.b_intro.setEnabled(emite)
 
         a = e.get("actual")
         self.chip.poner(a["tipo"] if a else "")
@@ -204,12 +222,19 @@ class PaginaEmision(QWidget):
             self.barra.poner(va / a["dur"], a["tipo"])
             self.va.setText(mmss(min(va, a["dur"])))
             self.resta.setText("-" + mmss(a["dur"] - va))
+            intro = a.get("intro") or 0.0
+            self.intro.setText(tr("INTRO %s") % mmss(intro - va) if intro > va else "")
         else:
             self.barra.poner(0.0)
             self.va.setText("")
             self.resta.setText("")
+            self.intro.setText("")
         j = e.get("jingle")
         self.encima.poner("♪  " + tr("encima: ") + j["titulo"] if j else "")
+        aux = e.get("aux") or []
+        self.auxiliares.poner("   ·   ".join(
+            "%s: %s%s" % (x["nombre"], x["titulo"], ("  -" + mmss(x["resta"])) if x.get("resta") else "")
+            for x in aux))
 
         pauta = e.get("pauta") or []
         sig = next((f for f in pauta if f["estado"] in ("plan", "prep", "prog")
@@ -757,6 +782,8 @@ class PaginaAjustes(QWidget):
         for titulo, clave, obj in ((N_("Emisora"), "sistema", lambda: ctx.cfg),
                                    (N_("Salida de audio"), "salida", lambda: ctx.cfg.salida),
                                    (N_("Mezcla"), "mezcla", lambda: ctx.cfg.mezcla),
+                                   (N_("Detector de silencio"), "silencio", lambda: ctx.cfg.silencio),
+                                   (N_("Reserva (playout espejo)"), "reserva", lambda: ctx.cfg.reserva),
                                    (N_("Panel web"), "web", lambda: ctx.cfg.web)):
             t = Tarjeta(titulo)
             f = Formulario(ESQUEMA[clave], ctx.nucleo)
@@ -767,6 +794,11 @@ class PaginaAjustes(QWidget):
                 self.url.setObjectName("ayuda")
                 self.url.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 t.caja.addWidget(self.url)
+            if clave == "reserva":
+                self.reserva = QLabel("")
+                self.reserva.setObjectName("aviso")
+                self.reserva.setWordWrap(True)
+                t.caja.addWidget(self.reserva)
             col.addWidget(t)
             self.formularios.append((f, obj))
         col.addStretch(1)
@@ -780,6 +812,64 @@ class PaginaAjustes(QWidget):
         web = self.ctx.web
         self.url.setText(tr("Ahora mismo: %s") % web.url if web is not None and web.url
                          else tr("Ahora mismo el panel web no está en marcha."))
+
+    def actualizar(self, e: dict) -> None:
+        r = e.get("reserva") or {}
+        self.reserva.setText(tr("Ahora: %s") % r["texto"] if r.get("activa") else "")
+
+
+# ================================================================ grabaciones
+
+class PaginaGrabaciones(QWidget):
+    def __init__(self, ctx):
+        super().__init__()
+        self.ctx = ctx
+        dentro = QWidget()
+        col = QVBoxLayout(dentro)
+        col.setContentsMargins(18, 16, 18, 16)
+        col.setSpacing(14)
+        t = Tarjeta(N_("Grabando ahora"))
+        self.estado = QLabel(tr("Nada."))
+        self.estado.setObjectName("ayuda")
+        self.estado.setWordWrap(True)
+        self.estado.setTextFormat(Qt.TextFormat.PlainText)
+        t.caja.addWidget(self.estado)
+        col.addWidget(t)
+        self.lista = PaginaLista(
+            ctx, N_("Grabaciones programadas"), ESQUEMA["grabacion"], lambda: ctx.cfg.grabaciones,
+            lambda: modconfig.nuevo(modconfig.Grabacion),
+            lambda g: "%02d:%02d · %g min" % (g.hora, g.minuto, g.duracion), lambda g: g.activa,
+            nota=N_("Líneas, corresponsales o conexiones que hay que grabar a una hora. Al acabar, la "
+                    "grabación puede entrar sola en una lista auxiliar."),
+            vacio=N_("No hay grabaciones programadas. Pulsa «Añadir»."), incrustada=True)
+        self.lista.setMinimumHeight(560)
+        col.addWidget(self.lista)
+        t3 = Tarjeta(N_("Logger de antena"))
+        self.form = Formulario(ESQUEMA["logger"], ctx.nucleo)
+        self.form.cambiado.connect(ctx.cambiado)
+        t3.caja.addWidget(self.form)
+        col.addWidget(t3)
+        col.addStretch(1)
+        raiz = QVBoxLayout(self)
+        raiz.setContentsMargins(0, 0, 0, 0)
+        raiz.addWidget(en_scroll(dentro))
+
+    def cargar(self) -> None:
+        self.lista.cargar()
+        self.form.poner(self.ctx.cfg.logger)
+
+    def actualizar(self, _e=None) -> None:
+        g = self.ctx.nucleo.grabaciones.estado()
+        lineas = ["●  %s  —  %s  (%s)" % (x["nombre"], os.path.basename(x["fichero"]), tr("quedan %s") % mmss(x["resta"]))
+                  for x in g["en_curso"]]
+        if g["logger"]:
+            lineas.append("●  %s  —  %s" % (tr("Logger de antena"), g["logger"]["fichero"]))
+        for x in g["terminadas"][:5]:
+            lineas.append("%s  %s  —  %s%s" % (hms(x["t"]), x["nombre"], os.path.basename(x["fichero"]),
+                                             ("   " + tr("ERROR: %s") % x["error"]) if x["error"] else ""))
+        texto = "\n".join(lineas) or tr("Nada.")
+        if texto != self.estado.text():
+            self.estado.setText(texto)
 
 
 # ================================================================ registro
@@ -800,6 +890,7 @@ class PaginaRegistro(QWidget):
         fila.addWidget(self.dia)
         fila.addWidget(boton(tr("Actualizar"), "pequeno", self.cargar))
         fila.addWidget(boton(tr("Abrir la carpeta"), "pequeno", self._abrir))
+        fila.addWidget(boton(tr("Certificado de emisión…"), "pequeno", self._certificado))
         self.cuenta = QLabel("")
         self.cuenta.setObjectName("ayuda")
         fila.addWidget(self.cuenta)
@@ -846,3 +937,40 @@ class PaginaRegistro(QWidget):
         carpeta = self.ctx.nucleo.registro.carpeta
         if carpeta and os.path.isdir(carpeta):
             QDesktopServices.openUrl(QUrl.fromLocalFile(carpeta))
+
+    def _certificado(self) -> None:
+        """Las cunas emitidas entre dos fechas, como pagina para imprimir o guardar en PDF."""
+        from PyQt6.QtWidgets import QDateEdit, QDialog, QDialogButtonBox, QFormLayout, QLineEdit
+        from PyQt6.QtCore import QDate
+        d = QDialog(self)
+        d.setWindowTitle(tr("Certificado de emisión"))
+        f = QFormLayout(d)
+        hoy = QDate.currentDate()
+        desde = QDateEdit(hoy.addDays(-hoy.day() + 1))
+        hasta = QDateEdit(hoy)
+        for w in (desde, hasta):
+            w.setCalendarPopup(True)
+            w.setDisplayFormat("dd/MM/yyyy")
+        filtro = QLineEdit()
+        filtro.setPlaceholderText(tr("anunciante o campaña (opcional)"))
+        f.addRow(tr("Desde"), desde)
+        f.addRow(tr("Hasta"), hasta)
+        f.addRow(tr("Filtro"), filtro)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        f.addRow(bb)
+        if d.exec() != QDialog.DialogCode.Accepted:
+            return
+        a, b = desde.date().toString("yyyy-MM-dd"), hasta.date().toString("yyyy-MM-dd")
+        ruta, _ = QFileDialog.getSaveFileName(self, tr("Guardar el certificado"),
+                                              "certificado %s %s.html" % (a, b), tr("Página web (*.html)"))
+        if not ruta:
+            return
+        try:
+            with open(ruta, "w", encoding="utf-8") as fh:
+                fh.write(self.ctx.nucleo.certificado(a, b, filtro.text()))
+        except OSError as e:
+            self.ctx.avisar(tr("No se ha podido guardar: %s") % e, True)
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(ruta))

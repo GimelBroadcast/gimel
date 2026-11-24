@@ -14,6 +14,13 @@ Configuracion de GIMEL. Todo vive en un unico JSON (datos/config.json):
     metadatos    titulo en emision hacia un fichero o una URL
     web          panel de control por navegador
     idioma       en que idioma hablan la ventana, el panel web y los avisos
+    silencio     detector de silencio y lista de emergencia
+    grabaciones  grabaciones programadas (lineas, corresponsales, la propia antena)
+    logger       grabacion continua de lo que sale al aire
+    reserva      este equipo como playout espejo de otro
+
+Las listas auxiliares y la botonera no estan aqui: son manejo en directo y
+van en su propio fichero (datos/auxiliares.json, ver gimel/auxiliares.py).
 
 Las franjas van por horas enteras porque la rotacion es por horas: cada hora
 se planifica de una pieza con la franja que le toque.
@@ -62,8 +69,8 @@ class Franja:
     dias: typing.List[bool] = field(default_factory=_todos)
     desde: int = 0                   # hora de inicio, 0..23
     hasta: int = 24                  # hora de fin, 1..24
-    canciones: str = ""              # carpeta o lista
-    orden: str = "aleatorio"         # aleatorio | secuencial
+    canciones: str = ""              # carpeta o lista (con orden "pauta": la carpeta de las pautas importadas)
+    orden: str = "aleatorio"         # aleatorio | secuencial | pauta (la lista de cada hora, ver gimel/pautas.py)
     dur_min: float = 0.0             # descartar canciones mas cortas (0 = sin limite)
     dur_max: float = 0.0             # descartar canciones mas largas (0 = sin limite)
     jingles: bool = False
@@ -105,8 +112,8 @@ class BloquePubli:
     referencia: str = "jingle"       # a esa hora empieza: silencio | jingle | contenido
     contenido: str = "cunas"         # cunas | relleno (musica de relleno todo el bloque)
     duracion: float = 60.0           # lo que dura el contenido: EXACTO
-    origen: str = ""                 # carpeta o lista con las cunas
-    orden: str = "aleatorio"         # aleatorio | secuencial
+    origen: str = ""                 # carpeta o lista con las cunas (con orden "pauta": la de las pautas)
+    orden: str = "aleatorio"         # aleatorio | secuencial | pauta (la lista de cada corte, importada)
     sobrante: str = "cortar"         # si las cunas no llenan: cortar | relleno | silencio
     relleno_origen: str = ""         # musica de relleno (fichero, carpeta o lista)
     silencio_antes: float = 5.0      # silencio antes del jingle de entrada
@@ -135,14 +142,21 @@ class EventoFijo:
     hasta: int = 24
     minuto: int = 30
     segundo: int = 0
+    tipo: str = "audio"              # audio | enlace (network join: engancharse a la cadena)
     origen: str = ""                 # fichero, carpeta o lista (si hay varios, rotan)
     orden: str = "aleatorio"
+    enlace: str = ""                 # tipo enlace: URL del stream de la cadena, o vacio para la entrada
+    entrada: str = ""                # tipo enlace sin URL: entrada de tarjeta, "API|nombre"
+    duracion: float = 300.0          # tipo enlace: cuanto dura, EXACTO
 
     def cubre(self, dia: int, hora: int) -> bool:
         return self.activo and cubre(self.dias, self.desde, self.hasta, dia, hora)
 
     def desfase(self) -> float:
         return self.minuto * 60.0 + self.segundo
+
+    def valido(self) -> bool:
+        return bool(self.enlace or self.entrada) if self.tipo == "enlace" else bool(self.origen)
 
 
 @dataclass
@@ -253,6 +267,52 @@ class Web:
 
 
 @dataclass
+class Silencio:
+    activo: bool = False
+    umbral_db: float = -45.0         # por debajo de esto, la principal se da por muda
+    segundos: float = 15.0           # tanto tiempo muda (mas que el negro de un bloque) y entra la reserva
+    origen: str = ""                 # carpeta o lista de emergencia
+    orden: str = "aleatorio"
+    vuelta: float = 5.0              # con la principal sonando otra vez tantos s, la reserva se retira
+
+
+@dataclass
+class Grabacion:
+    nombre: str = N_("Grabación")
+    activa: bool = True
+    dias: typing.List[bool] = field(default_factory=_todos)
+    hora: int = 12
+    minuto: int = 0
+    segundo: int = 0
+    duracion: float = 30.0           # minutos
+    fuente: str = "url"              # url (stream de un corresponsal) | entrada (tarjeta) | antena
+    url: str = ""
+    entrada: str = ""                # "API|nombre" de la entrada de tarjeta
+    carpeta: str = ""
+    formato: str = "mp3"             # mp3 | wav
+    bitrate: int = 128
+    lista: int = 0                   # ingesta: al acabar, a esta lista auxiliar (0 = a ninguna)
+
+
+@dataclass
+class Logger:
+    activo: bool = False
+    carpeta: str = ""                # dentro, una carpeta por dia y un fichero por hora
+    bitrate: int = 64
+    dias: int = 90                   # lo mas viejo se borra
+
+
+@dataclass
+class Reserva:
+    activa: bool = False             # este equipo es el playout espejo de otro
+    principal: str = ""              # URL del panel web del principal (http://192.168.1.10:8950)
+    clave: str = ""                  # la del panel del principal
+    espera: float = 10.0             # s sin saber del principal (o sin que emita) antes de tomar el relevo
+    devolver: bool = True            # cuando el principal vuelve a emitir, la reserva se aparta
+    copiar: bool = True              # copiar la programacion del principal mientras no se emite
+
+
+@dataclass
 class Config:
     emisora: str = "GIMEL"
     franjas: typing.List[Franja] = field(default_factory=list)
@@ -266,6 +326,10 @@ class Config:
     cue: Cue = field(default_factory=Cue)
     metadatos: Metadatos = field(default_factory=Metadatos)
     web: Web = field(default_factory=Web)
+    silencio: Silencio = field(default_factory=Silencio)
+    grabaciones: typing.List[Grabacion] = field(default_factory=list)
+    logger: Logger = field(default_factory=Logger)
+    reserva: Reserva = field(default_factory=Reserva)
     arranque_automatico: bool = False
     idioma: str = "es"               # de las interfaces y de los avisos (gimel/idioma.py)
 
@@ -343,8 +407,9 @@ def origenes(cfg: Config) -> list:
     for b in cfg.publicidad:
         res += [b.origen, b.relleno_origen, b.jingle_origen, b.jingle_salida_origen]
     for e in cfg.eventos:
-        res.append(e.origen)
-    res += list(cfg.senales.archivos.values()) + [cfg.senales.generica]
+        if e.tipo != "enlace":
+            res.append(e.origen)
+    res += list(cfg.senales.archivos.values()) + [cfg.senales.generica, cfg.silencio.origen]
     return [o for o in dict.fromkeys(res) if o]
 
 

@@ -40,6 +40,16 @@ discipline of a broadcast clock.
 - [CUE messages](#cue-messages)
 - [Now playing title](#now-playing-title)
 - [Broadcast log](#broadcast-log)
+- [Live assist](#live-assist)
+  - [Aux lists](#aux-lists)
+  - [Cart wall](#cart-wall)
+  - [Preview](#preview)
+  - [Intros and the presenter screen](#intros-and-the-presenter-screen)
+- [Network join](#network-join)
+- [Silence detector](#silence-detector)
+- [Recordings and air logger](#recordings-and-air-logger)
+- [Imported logs and proof of play](#imported-logs-and-proof-of-play)
+- [Backup playout](#backup-playout)
 - [Web panel](#web-panel)
 - [When something goes wrong](#when-something-goes-wrong)
 - [Updates](#updates)
@@ -72,7 +82,18 @@ discipline of a broadcast clock.
   music, with opening and closing silences and intro and return jingles.
 - **CUE messages** (`break` / `endbreak`) over HTTP, TCP, UDP, a file or DTMF
   tones, so other stations or systems can break away and rejoin.
-- **Fixed-minute events**: bulletins, promos, half-hour signals.
+- **Fixed-minute events**: bulletins, promos, half-hour signals, and
+  **network joins** to a live stream or a sound card input for an exact time.
+- **Live assist**: four **aux lists** in manual, live assist or automatic mode,
+  a 16-button **cart wall** and **preview** through another sound card. The
+  main playout carries on underneath (over, ducked or muted) and never loses
+  its timing.
+- **Intro countdown** to talk over, and a **presenter screen**.
+- **Silence detector** with an emergency list.
+- **Scheduled recordings** of lines and correspondents, with ingest into an
+  aux list, and an **air logger**.
+- **Imported logs** from music and traffic schedulers, and **proof of play**.
+- **Backup playout**: a second GIMEL that takes over if the main one stops.
 - **Loudness levelling** to a target in LUFS (BS.1770), with a safety limiter.
 - **Live library.** Folders and playlists are rescanned every minute: songs and
   jingles added or removed while GIMEL is running join or leave the rotation
@@ -590,6 +611,161 @@ another; the *Log* page translates it when showing it.
 If the file cannot be written (the disk is full, or it is open in Excel), the
 broadcast carries on.
 
+## Live assist
+
+The hourly rotation runs the station on its own. For a live show, GIMEL also
+has what a radio automation system keeps next to the playlist: the *Aux lists
+and cart wall* page, in the window and in the web panel.
+
+Everything on that page is live operation, not configuration: it applies at
+once, without *Save changes*, and is kept in `datos/auxiliares.json`.
+
+### Aux lists
+
+Four players, each with its own list. Add files, a folder or an .m3u / .pls
+playlist (drag them in from Explorer in the window), reorder them by
+dragging, and fire them.
+
+Each list has one of three modes:
+
+| Mode | What it does |
+|---|---|
+| Manual | Each file has to be fired. When it ends, the list stops with the next one cued |
+| Live assist | Segues from one file to the next until it reaches a **stop point** (marked on the file after which to stop), and waits there |
+| Automatic | Segues everything, ignoring stop points |
+
+Files segue at their mix point, as in the rotation. *Loop* starts the list
+over at the end. The **next** file (green) is the one that plays when you
+press ▶ or when the list segues; *Cue as next* changes it. ⏸ pauses and
+resumes where it was, ⏭ skips to the next file, and the bottom line shows when
+the list will stop on its own (backtiming).
+
+While a list plays, the **main playout** can stay as it is (*over*), be
+**ducked** a number of dB (to talk or play something over it) or be
+**muted**. The main playout never stops: its hour keeps running underneath,
+and when the aux list ends it comes back exactly where it is. Time signals,
+blocks and CUE messages stay in place whatever happens here; DTMF tones are
+never muted.
+
+Other options per list: its volume, announcing its titles to RDS and Icecast
+while it plays (the main playout's titles wait until it ends), and its
+**output**. A list can play with the broadcast (same sound card, same mix,
+Icecast included) or through **its own sound card**: one player per mixing
+desk channel. A list with its own output works even when GIMEL is not on air;
+the others need the broadcast to be running.
+
+Every file played from an aux list goes into the broadcast log as *Auxiliar*.
+
+### Cart wall
+
+Sixteen buttons with one audio each, for jingles, effects and music beds.
+Click to fire, click again to stop; several can play at once. A button can
+loop (a music bed). Buttons up to 30 s long are decoded into memory when they
+are assigned, so they start instantly. Like the lists, the cart wall can play
+over the main playout, duck it or mute it.
+
+### Preview
+
+Any file of a list or a button can be previewed through another sound card
+(the headphones one), whole or just its last 12 seconds. GIMEL warns if the
+preview card is the same as the broadcast one, because it would be heard on
+air.
+
+### Intros and the presenter screen
+
+There is no reliable way to tell, by listening, where the vocals of a song
+start, so intros are marked by hand: press **Mark intro** right when the
+vocals come in, with the song on air (*On air* page) or in preview, or type
+the seconds. From then on the song shows an **INTRO** countdown on the *On
+air* page, in the aux lists and on the presenter screen. Marks are kept in
+`datos/marcas.json`.
+
+The **presenter screen** (*View > Presenter screen*, F2, or `/locutor` in the
+web panel) is a separate window for the studio monitor: the clock, what is
+playing and how long is left, the intro countdown, the time to the next fixed
+item, what comes next, the aux lists playing, and alarms (emergency list on
+air, backup on air). F11 makes it full screen.
+
+## Network join
+
+A fixed-minute event can be a **network join** instead of an audio file: at
+its exact time the broadcast joins the network's live feed, from a stream URL
+or a sound card input (a satellite receiver, a codec), and carries it for an
+exact length of time. Music fades before it, as with a time signal.
+
+The feed is opened well in advance but only the latest second is kept, so
+what goes on air is live, not delayed. If the feed drops or stalls, silence
+goes out and it reconnects, and the event still ends on its exact frame: the
+hour stays fitted.
+
+## Silence detector
+
+*Settings > Silence detector*. If the main broadcast stays below a level
+(−45 dBFS by default) for longer than a set time (15 s by default, longer than
+the dead air of an ad block), an **emergency list** goes on air by itself,
+looping, over the main playout: a missing music folder, a dropped network
+feed. When the main playout has been sounding again for a few seconds, the
+emergency list fades out. Both moments are written to the broadcast log. It
+does not trigger while an aux list or the cart wall is playing.
+
+## Recordings and air logger
+
+The *Recordings* page has two things.
+
+**Scheduled recordings**, each with its days, start time and length, from a
+stream (a correspondent, another station), a sound card input (a line, a
+phone hybrid) or what goes on air, to MP3 or WAV. When a recording ends it can
+go into an aux list by itself (**ingest**), ready to fire. If GIMEL is opened
+halfway through a recording, it records what is left.
+
+The **air logger** records everything that goes on air, one MP3 per hour in
+one folder per day (`folder\YYYY-MM-DD\HH.mp3`), and deletes what is older
+than the days you choose. It records while GIMEL is on air.
+
+## Imported logs and proof of play
+
+Music schedulers (MusicMaster, Selector, Powergold) and traffic systems export
+the day's log as a text file, each in its own way and usually with
+configurable columns. *File > Import a log* (in the web panel, on the *Time
+slots* page) reads almost any of them: from each line it takes the time
+(HH:MM or HH:MM:SS; if a line has none, the last one seen counts), the date
+if there is one, and the audio, as a full path, a file name or a **cart
+number** (the file in the audio folder whose name starts with it).
+
+The result is one .m3u8 list per hour (music) or per break (traffic, by the
+hour and minute of the block) in the folder you choose:
+
+    2026-11-24 14.m3u8         the music from 14:00 to 15:00
+    2026-11-24 14-30.m3u8      the spots of the 14:30 block
+
+Set **Imported log** as the order of a time slot (or of an ad block) with
+that folder as its source, and each hour (or break) plays its list in order.
+GIMEL still fits the hour: if the log has more music than fits, the last
+songs are left out; an hour without a log falls back to the general
+programming.
+
+The **proof of play** (*Log > Proof of play*) lists the spots aired between
+two dates, with their real time and a summary per spot, optionally filtered
+by any text (the advertiser, the campaign). It opens as a web page ready to
+print or save as PDF.
+
+## Backup playout
+
+*Settings > Backup*. A second GIMEL can be the **mirror** of the main one: it
+asks the main one's web panel every two seconds and, if it stops answering or
+stops broadcasting for longer than you say, it goes on air itself. When the
+main one broadcasts again, the backup steps aside (if you want it to).
+
+While it is not on air, the backup copies the main one's programming every
+minute, except what belongs to each computer: its sound card, its web panel,
+its Icecast servers and these settings. Music folders must look the same from
+both computers (a NAS, mapped drives with the same letter), and the main one
+needs its web panel open to the network with a password.
+
+GIMEL does not switch the output: the two playouts must reach the transmitter
+through something that can combine them, such as an audio switcher with
+silence detection or an Icecast fallback mount point.
+
 ## Web panel
 
 The web panel does the same as the desktop window, against the same engine:
@@ -696,6 +872,8 @@ program folder, or the source code) keeps it in `datos\` next to the program.
 | `rotacion.json` | The state of every rotation: what has played and what comes next |
 | `analisis.db` | The analysis of each audio. It can be deleted; it is rebuilt |
 | `registro\YYYY-MM-DD.csv` | The broadcast log |
+| `auxiliares.json` | The aux lists, the cart wall and the preview card |
+| `marcas.json` | The intro marks |
 
 Neither updating nor uninstalling touches this folder. To move a station to
 another computer, export the configuration from the *File* menu, or copy the
@@ -779,6 +957,12 @@ Inside `gimel/`:
 | `icecast.py` | Streaming to Icecast servers |
 | `cue.py` | CUE messages and the now playing title |
 | `registro.py` | The broadcast log |
+| `auxiliares.py` | Aux lists, cart wall, preview, own outputs and the emergency list |
+| `marcas.py` | Intro marks |
+| `grabaciones.py` | Scheduled recordings and the air logger |
+| `pautas.py` | Importing music and traffic logs |
+| `certificado.py` | Proof of play |
+| `reserva.py` | The backup (mirror) playout |
 | `actualizacion.py` | Updating from GitHub |
 | `novedades.py` | What is new in each version |
 | `idioma.py`, `idiomas/` | The languages |

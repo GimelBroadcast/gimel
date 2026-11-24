@@ -11,7 +11,7 @@ Cada campo es un dict:
     clave      atributo de la dataclass de config
     etiqueta   lo que lee el usuario
     tipo       titulo | texto | parrafo | clave | bool | entero | decimal | opcion |
-               origen | dias | hora | hora_fin | salida
+               origen | dias | hora | hora_fin | salida | entrada (de tarjeta: "API|nombre")
     ayuda      explicacion larga (opcional)
     min, max, paso, sufijo        para los numeros
     opciones   [(valor, texto)]   para tipo = opcion
@@ -38,6 +38,7 @@ def t(texto, **mas) -> dict:
 
 ORDEN = [("aleatorio", "Aleatorio: no se repite nada hasta que haya sonado todo"),
          ("secuencial", "Secuencial: en el orden de la lista")]
+ORDEN_PAUTA = ORDEN + [("pauta", "Pauta importada: la lista que toca a cada hora")]
 
 _CUANDO = [
     c("nombre", "Nombre", "texto"),
@@ -53,9 +54,14 @@ FRANJA = [
     *[dict(x, solo_franja=True) for x in _CUANDO],
     t("Canciones"),
     c("canciones", "Carpeta o lista", "origen",
-      "Carpeta (con sus subcarpetas) o lista .m3u / .pls de la que sale la música.",
+      "Carpeta (con sus subcarpetas) o lista .m3u / .pls de la que sale la música. Con «Pauta "
+      "importada», la carpeta donde se importan las pautas (Archivo > Importar pauta).",
       modo="carpeta"),
-    c("orden", "Orden", "opcion", opciones=ORDEN),
+    c("orden", "Orden", "opcion",
+      "Pauta importada: cada hora suena la lista de esa hora que haya mandado el planificador "
+      "de música (MusicMaster, Selector, Powergold…), en su orden; GIMEL la cuadra. Una hora sin "
+      "pauta tira de la programación general.",
+      opciones=ORDEN_PAUTA),
     c("dur_min", "Descartar las de menos de", "decimal", "0 = sin límite.",
       min=0, max=3600, paso=5, sufijo="s"),
     c("dur_max", "Descartar las de más de", "decimal", "0 = sin límite.",
@@ -116,8 +122,14 @@ BLOQUE = [
     c("duracion", "Duración exacta", "decimal",
       "Lo que dura el contenido, clavado. La música se reajusta alrededor.",
       min=1, max=3000, paso=5, sufijo="s"),
-    c("origen", "Carpeta o lista de cuñas", "origen", modo="carpeta", si=("contenido", ["cunas"])),
-    c("orden", "Orden de las cuñas", "opcion", opciones=ORDEN, si=("contenido", ["cunas"])),
+    c("origen", "Carpeta o lista de cuñas", "origen",
+      "Con «Pauta importada», la carpeta donde se importa la pauta de publicidad.",
+      modo="carpeta", si=("contenido", ["cunas"])),
+    c("orden", "Orden de las cuñas", "opcion",
+      "Pauta importada: en cada corte, las cuñas que mande el programa de publicidad para esa "
+      "hora y ese minuto, en su orden.",
+      opciones=[(v, x.replace("a cada hora", "en cada corte")) for v, x in ORDEN_PAUTA],
+      si=("contenido", ["cunas"])),
     c("sobrante", "Si las cuñas no llenan el tiempo", "opcion",
       "Huecos de menos de 3 s se reparten en respiros entre cuña y cuña.",
       opciones=[("cortar", "Otra cuña más, cortada al llegar al tiempo"),
@@ -154,9 +166,22 @@ EVENTO = [
     c("hasta", "hasta las", "hora_fin"),
     c("minuto", "Minuto de cada hora", "entero", min=0, max=59),
     c("segundo", "Segundo", "entero", min=0, max=59),
+    c("tipo", "Qué suena", "opcion",
+      "Enlace con la cadena (network join): a esa hora exacta la emisión se engancha al directo "
+      "de la cadena, por un stream o por una entrada de la tarjeta, y lo da durante el tiempo "
+      "que digas. Si el directo se corta, sale silencio y se reconecta; la hora sigue cuadrando.",
+      opciones=[("audio", "Un audio"), ("enlace", "Enlace con la cadena (directo)")]),
     c("origen", "Audio", "origen",
-      "Un fichero, o una carpeta o lista si quieres que vayan rotando.", modo="cualquiera"),
-    c("orden", "Si hay varios", "opcion", opciones=ORDEN),
+      "Un fichero, o una carpeta o lista si quieres que vayan rotando.", modo="cualquiera",
+      si=("tipo", ["audio"])),
+    c("orden", "Si hay varios", "opcion", opciones=ORDEN, si=("tipo", ["audio"])),
+    c("enlace", "Stream de la cadena", "texto",
+      "URL del directo (http://…/cadena.mp3). Vacío: la entrada de tarjeta de abajo.",
+      si=("tipo", ["enlace"])),
+    c("entrada", "O entrada de tarjeta", "entrada",
+      "La línea por la que llega la cadena (un receptor de satélite, un códec).", si=("tipo", ["enlace"])),
+    c("duracion", "Duración exacta", "decimal", min=1, max=36000, paso=30, sufijo="s",
+      si=("tipo", ["enlace"])),
 ]
 
 MEZCLA = [
@@ -307,6 +332,72 @@ WEB = [
       "Sin contraseña, el panel solo atiende a este mismo equipo aunque esté abierto a la red."),
 ]
 
+SILENCIO = [
+    c("activo", "Vigilar el silencio", "bool",
+      "Si la emisión principal se queda muda (una carpeta que desaparece, un directo caído), entra "
+      "sola una lista de emergencia, en bucle, encima de la principal. Cuando la principal vuelve "
+      "a sonar, la de emergencia se retira con un fundido."),
+    c("segundos", "Silencio que hace saltar la emergencia", "decimal",
+      "Más que el negro de un bloque de publicidad, para que no salte en cada desconexión.",
+      min=2, max=600, paso=1, sufijo="s"),
+    c("umbral_db", "Por debajo de este nivel es silencio", "decimal", min=-80, max=-10, paso=1, sufijo="dBFS"),
+    c("origen", "Lista de emergencia", "origen", "Carpeta o lista con la música de reserva.", modo="carpeta"),
+    c("orden", "Orden", "opcion", opciones=ORDEN),
+    c("vuelta", "Retirarla con la principal sonando", "decimal", min=1, max=120, paso=1, sufijo="s"),
+]
+
+GRABACION = [
+    t("Cuándo"),
+    c("activa", "Grabación activa", "bool"),
+    c("nombre", "Nombre", "texto", "Va en el nombre del fichero, con la fecha y la hora."),
+    c("dias", "Días", "dias"),
+    c("hora", "Empieza a las", "hora"),
+    c("minuto", "Minuto", "entero", min=0, max=59),
+    c("segundo", "Segundo", "entero", min=0, max=59),
+    c("duracion", "Duración", "decimal", min=0.1, max=1440, paso=1, sufijo="min"),
+    t("Qué se graba"),
+    c("fuente", "Fuente", "opcion",
+      opciones=[("url", "Un stream (un corresponsal, otra emisora)"),
+                ("entrada", "Una entrada de la tarjeta (una línea, un híbrido)"),
+                ("antena", "Lo que sale al aire")]),
+    c("url", "URL del stream", "texto", si=("fuente", ["url"])),
+    c("entrada", "Entrada de tarjeta", "entrada", si=("fuente", ["entrada"])),
+    t("Dónde"),
+    c("carpeta", "Carpeta", "origen", modo="carpeta"),
+    c("formato", "Formato", "opcion", opciones=[("mp3", "MP3"), ("wav", "WAV (sin pérdida)")]),
+    c("bitrate", "Calidad", "entero", min=32, max=320, paso=32, sufijo="kbps", si=("formato", ["mp3"])),
+    c("lista", "Al acabar, añadirla a", "opcion",
+      "Ingesta: la grabación entra sola en una lista auxiliar, lista para lanzarla.",
+      opciones=[(0, "Ninguna lista"), (1, "Lista auxiliar 1"), (2, "Lista auxiliar 2"),
+                (3, "Lista auxiliar 3"), (4, "Lista auxiliar 4")]),
+]
+
+LOGGER = [
+    c("activo", "Grabar todo lo que sale al aire", "bool",
+      "La prueba de lo emitido: un MP3 por hora en una carpeta por día. Graba mientras se emite."),
+    c("carpeta", "Carpeta", "origen", modo="carpeta"),
+    c("bitrate", "Calidad", "entero", min=16, max=192, paso=16, sufijo="kbps"),
+    c("dias", "Guardar", "entero", "Lo más viejo se borra solo. 0 = no borrar nunca.",
+      min=0, max=3650, sufijo="días"),
+]
+
+RESERVA = [
+    c("activa", "Este equipo es la reserva de otro GIMEL", "bool",
+      "Playout espejo: este equipo vigila al principal y, si deja de emitir, empieza a emitir él. "
+      "La salida de los dos tiene que poder juntarse fuera (un conmutador con detector de "
+      "silencio, o un punto de montaje de reserva en Icecast)."),
+    c("principal", "Panel web del principal", "texto",
+      "Por ejemplo http://192.168.1.10:8950. El principal tiene que tener el panel abierto a la red "
+      "y con contraseña."),
+    c("clave", "Contraseña del panel del principal", "clave"),
+    c("espera", "Tomar el relevo tras", "decimal",
+      "Segundos sin saber del principal, o sin que emita.", min=2, max=600, paso=1, sufijo="s"),
+    c("devolver", "Apartarse cuando el principal vuelva a emitir", "bool"),
+    c("copiar", "Copiar la programación del principal", "bool",
+      "Mientras no emite, cada minuto. No se copian la tarjeta, el panel web, Icecast ni esto. "
+      "Las carpetas de música tienen que verse igual desde los dos equipos."),
+]
+
 SISTEMA = [
     c("emisora", "Nombre de la emisora", "texto"),
     c("arranque_automatico", "Empezar a emitir al abrir el programa", "bool",
@@ -317,7 +408,8 @@ SISTEMA = [
 
 ESQUEMA = {"franja": FRANJA, "senales": SENALES, "bloque": BLOQUE, "evento": EVENTO,
            "mezcla": MEZCLA, "salida": SALIDA, "icecast": ICECAST, "cue": CUE,
-           "destino_cue": DESTINO_CUE, "metadatos": METADATOS, "web": WEB, "sistema": SISTEMA}
+           "destino_cue": DESTINO_CUE, "metadatos": METADATOS, "web": WEB, "sistema": SISTEMA,
+           "silencio": SILENCIO, "grabacion": GRABACION, "logger": LOGGER, "reserva": RESERVA}
 
 TRADUCIBLE = ("etiqueta", "ayuda", "sufijo")      # lo que de un campo lee el usuario (y sus opciones)
 

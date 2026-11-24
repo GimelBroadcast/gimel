@@ -22,6 +22,16 @@ Solo el hilo de audio toca las voces. Los demas hilos dejan ordenes en una cola
     eventos   ("inicio", id, frame)
               ("fin", id, frame)
 
+Cada voz es de un GRUPO:
+
+    PRINCIPAL (0)   la pauta de la hora. Su nivel lo puede bajar una lista
+                    auxiliar mientras suena (`principal`, con rampa), sin
+                    que cambie nada de su hora: sigue corriendo por debajo.
+    SISTEMA (-1)    lo que no se debe callar nunca (los tonos DTMF de un CUE).
+    1, 2, ...       las listas auxiliares, la botonera: suenan encima de la
+                    principal y sus eventos van a otra cola (`eventos_aux`),
+                    que el emisor no lee.
+
 Con `simulado=True` no hay tarjeta: se avanza a mano con `avanzar()` y el reloj
 es exacto. Con eso se prueban horas enteras de emision en segundos.
 """
@@ -44,15 +54,17 @@ except Exception:                                         # sin tarjeta o sin el
 
 TECHO = 0.985                 # el limitador no deja pasar de aqui (-0,13 dBFS)
 
+PRINCIPAL, SISTEMA = 0, -1    # grupos de voces (las auxiliares van de 1 en adelante)
+
 
 class Voz:
     """Un audio colocado en la linea de tiempo del motor."""
 
     _ids = itertools.count(1)
     __slots__ = ("id", "fuente", "inicio", "ganancia", "fundidos", "duck",
-                 "pos", "activa")
+                 "pos", "activa", "grupo")
 
-    def __init__(self, fuente, inicio: int, ganancia: float = 1.0):
+    def __init__(self, fuente, inicio: int, ganancia: float = 1.0, grupo: int = PRINCIPAL):
         self.id = next(Voz._ids)
         self.fuente = fuente
         self.inicio = int(inicio)        # frame de mezcla en que arranca
@@ -61,6 +73,7 @@ class Voz:
         self.duck = None                 # (fa, fb, fc, fd, nivel)
         self.pos = 0                     # frames ya sonados
         self.activa = False
+        self.grupo = int(grupo)
 
 
 class Motor:
@@ -74,6 +87,14 @@ class Motor:
         self.voces = []                  # solo el hilo de audio
         self.ordenes = deque()
         self.eventos = deque()
+        self.eventos_aux = deque()       # los de las voces de grupo > 0 (listas auxiliares)
+        self.principal = 1.0             # nivel al que tiene que ir el grupo principal (0..1)
+        self.bajada_s = 0.25             # lo que tarda en bajar a ese nivel
+        self.subida_s = 0.8              # y en volver arriba
+        self._g_principal = 1.0          # nivel del grupo principal al final del ultimo bloque
+        self.umbral_silencio = 10 ** (-45 / 20)
+        self.f_sonido = 0                # ultimo bloque en que la principal (antes de bajarla) sono
+        self.tomas = []                  # mas oidos de la salida (logger, grabaciones de antena)
         self.volumen = 1.0
         self.limitador = True
         self.mudo = False
@@ -82,6 +103,7 @@ class Motor:
 
         B = self.B
         self._mix = np.zeros((B, 2), dtype=np.float32)
+        self._mix_aux = np.zeros((B, 2), dtype=np.float32)  # lo que no baja con la principal
         self._a = np.zeros((B, 2), dtype=np.float32)      # bloque retenido por el limitador
         self._b = np.zeros((B, 2), dtype=np.float32)
         self._sal = np.zeros((B, 2), dtype=np.float32)
@@ -200,8 +222,24 @@ class Motor:
                         v.fundidos.append((int(f), max(1, int(n)), 1.0))
                         quedan.append(v)
                     else:
-                        self.eventos.append(("fin", v.id, self.m))
+                        self._evento("fin", v, self.m)
                 self.voces = quedan
+
+    def _evento(self, tipo: str, v: Voz, frame: int) -> None:
+        (self.eventos_aux if v.grupo > 0 else self.eventos).append((tipo, v.id, frame))
+
+    def _nivel_principal(self, buf: np.ndarray) -> None:
+        """El grupo principal al nivel que le pidan, con una rampa lineal de bloque en bloque."""
+        g0, obj = self._g_principal, min(1.0, max(0.0, float(self.principal)))
+        if g0 == obj:
+            if g0 != 1.0:
+                buf *= np.float32(g0)
+            return
+        t = self.bajada_s if obj < g0 else self.subida_s
+        paso = self.B / (self.fs * max(0.01, t))
+        g1 = max(obj, g0 - paso) if obj < g0 else min(obj, g0 + paso)
+        buf *= np.float32(g0) + np.float32(g1 - g0) * self._rampa
+        self._g_principal = g1
 
     # ------------------------------------------------------------ mezcla
 
@@ -231,13 +269,22 @@ class Motor:
         m0 = self.m
         m1 = m0 + B
         self._ordenes()
-        buf = self._mix
-        buf.fill(0.0)
+        principal = self._mix
+        principal.fill(0.0)
+        aux = self._mix_aux
+        hay_aux = False
         vivas = []
         for v in self.voces:
             if v.inicio >= m1:
                 vivas.append(v)
                 continue
+            if v.grupo == PRINCIPAL:
+                buf = principal
+            else:
+                buf = aux
+                if not hay_aux:
+                    hay_aux = True
+                    aux.fill(0.0)
             a = v.inicio - m0 if v.inicio > m0 else 0
             f0 = m0 + a
             cnt = B - a
@@ -257,7 +304,7 @@ class Motor:
                 if k:
                     if not v.activa:
                         v.activa = True
-                        self.eventos.append(("inicio", v.id, f0))
+                        self._evento("inicio", v, f0)
                     g = self._ganancia(v, f0, k)
                     if isinstance(g, float):
                         if g == 1.0:
@@ -273,14 +320,19 @@ class Motor:
                     elif not fin:                         # aun decodificando: se espera
                         self.secos += 1
             if fin:
-                self.eventos.append(("fin", v.id, f0 + k))
+                self._evento("fin", v, f0 + k)
             else:
                 vivas.append(v)
         self.voces = vivas
+        if float(np.abs(principal).max()) > self.umbral_silencio:
+            self.f_sonido = m0                            # para el detector de silencio
+        self._nivel_principal(principal)
+        if hay_aux:
+            principal += aux
         if self.sonda is not None:
-            self.sonda(m0, buf)
+            self.sonda(m0, principal)
         self.m = m1
-        return buf
+        return principal
 
     def _bloque(self) -> np.ndarray:
         """
@@ -317,6 +369,11 @@ class Motor:
         toma = self.toma
         if toma is not None:
             toma(sal)
+        for t in self.tomas:
+            try:
+                t(sal)
+            except Exception:
+                pass                                      # una grabacion rota no para la emision
         return sal
 
     def niveles(self):
@@ -520,6 +577,46 @@ def dispositivos(refrescar: bool = False) -> list:
                     "canales": int(d["max_output_channels"]),
                     "defecto": a["default_output_device"] == i})
     return res
+
+
+def entradas() -> list:
+    """Entradas de audio (lineas, microfonos, receptores): [{api, nombre, indice, canales, defecto}]."""
+    if sd is None:
+        return []
+    try:
+        apis = sd.query_hostapis()
+        todos = sd.query_devices()
+    except Exception:
+        return []
+    res = []
+    for i, d in enumerate(todos):
+        if d["max_input_channels"] <= 0:
+            continue
+        a = apis[d["hostapi"]]
+        if "WDM" in a["name"]:
+            continue
+        res.append({"api": a["name"], "nombre": d["name"], "indice": i,
+                    "canales": int(d["max_input_channels"]),
+                    "defecto": a["default_input_device"] == i})
+    return res
+
+
+def buscar_entrada(api: str, nombre: str):
+    """Como buscar_dispositivo, para las entradas."""
+    lista = entradas()
+    if not lista:
+        return None
+    for d in lista:
+        if d["nombre"] == nombre and (not api or d["api"] == api):
+            return d
+    for d in lista:
+        if d["nombre"] == nombre:
+            return d
+    for pref in ([api] if api else []) + list(APIS):
+        for d in lista:
+            if d["api"] == pref and d["defecto"]:
+                return d
+    return lista[0]
 
 
 def buscar_dispositivo(api: str, nombre: str):

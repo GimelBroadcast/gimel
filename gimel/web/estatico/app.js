@@ -28,7 +28,7 @@ async function cargarTextos() {
 
 const NOMBRES = {cancion: N_('Canción'), jingle: N_('Jingle'), senal: N_('Señal'), evento: N_('Evento'),
                  cuna: N_('Cuña'), relleno: N_('Relleno'), jingle_publi: N_('Jingle'),
-                 silencio: N_('Silencio'), cue: N_('CUE')};
+                 silencio: N_('Silencio'), cue: N_('CUE'), enlace: N_('Cadena')};
 const $ = (s, r) => (r || document).querySelector(s);
 const pad = n => String(n).padStart(2, '0');
 
@@ -177,6 +177,15 @@ function pintarEstado() {
   b.className = 'boton ' + (e.emitiendo ? 'rojo' : 'verde');
   $('#b-saltar').disabled = !e.emitiendo;
   $('#b-rehacer').disabled = !e.emitiendo;
+  $('#b-intro').disabled = !e.emitiendo;
+  const alarmas = [];
+  if ((e.aux || []).some(x => x.emergencia)) alarmas.push(T('LISTA DE EMERGENCIA EN ANTENA: la emisión principal está en silencio.'));
+  if (e.reserva && e.reserva.relevo) alarmas.push(T('ESTA ES LA RESERVA Y ESTÁ EN ANTENA'));
+  $('#alarma').hidden = !alarmas.length;
+  $('#alarma').textContent = alarmas.join('   ·   ');
+  $('#s-aux').textContent = (e.aux || []).map(x => x.nombre + ': ' + x.titulo + (x.resta ? '  -' + mmss(x.resta) : '')).join('   ·   ');
+  const res = $('#reserva-estado');
+  if (res) res.textContent = e.reserva && e.reserva.activa ? T('Ahora: ') + e.reserva.texto : '';
   const err = $('#error');
   err.hidden = !e.error;
   err.textContent = e.error || '';
@@ -234,10 +243,12 @@ function tic() {
     $('#s-barra').style.width = Math.min(100, 100 * va / a.dur) + '%';
     $('#s-va').textContent = mmss(Math.min(va, a.dur));
     $('#s-resta').textContent = '-' + mmss(a.dur - va);
+    $('#s-intro').textContent = a.intro > va ? F('INTRO %s', mmss(a.intro - va)) : '';
   } else {
     $('#s-barra').style.width = '0';
     $('#s-va').textContent = '';
     $('#s-resta').textContent = '';
+    $('#s-intro').textContent = '';
   }
   const an = E.ancla;
   if (an && E.emitiendo) {
@@ -256,10 +267,14 @@ $('#b-emitir').addEventListener('click', async () => {
 });
 $('#b-saltar').addEventListener('click', () => api('/api/emision', {accion: 'saltar'}));
 $('#b-rehacer').addEventListener('click', () => api('/api/emision', {accion: 'replanificar'}));
+$('#b-intro').addEventListener('click', async () => {
+  const r = await api('/api/intro', {});
+  avisar(r.mensaje, r.ok ? 4000 : 8000);
+});
 
 // ---------------------------------------------------------------- configuracion
 
-let CFG = null, GUARDADA = '', ESQ = null, SALIDAS = [], NUEVOS = {}, PLANTILLAS = {}, DIAS = [];
+let CFG = null, GUARDADA = '', ESQ = null, SALIDAS = [], ENTRADAS = [], NUEVOS = {}, PLANTILLAS = {}, DIAS = [];
 const sucio = () => CFG && JSON.stringify(CFG) !== GUARDADA;
 
 function marcar() {
@@ -268,7 +283,7 @@ function marcar() {
 
 async function cargarConfig() {
   const r = await api('/api/config');
-  CFG = r.config; ESQ = r.esquema; SALIDAS = r.salidas; NUEVOS = r.nuevos;
+  CFG = r.config; ESQ = r.esquema; SALIDAS = r.salidas; ENTRADAS = r.entradas || []; NUEVOS = r.nuevos;
   PLANTILLAS = r.plantillas_cue; DIAS = r.dias;
   GUARDADA = JSON.stringify(CFG);
   marcar();
@@ -338,6 +353,14 @@ function control(c, obj, repintar) {
         SALIDAS = (await api('/api/salidas?refrescar=1')).salidas; repintar();
       }}, T('Actualizar'))];
     }
+    case 'entrada': {
+      // las entradas de todas las API; el valor es "API|nombre"
+      const valores = ENTRADAS.map(x => x.api + '|' + x.nombre);
+      return h('select', {value: v, onchange: e => poner(e.target.value, false)},
+        h('option', {value: ''}, T('Predeterminada del sistema')),
+        ENTRADAS.map((x, i) => h('option', {value: valores[i]}, x.api.replace('Windows ', '') + '  ·  ' + x.nombre)),
+        v && !valores.includes(v) ? h('option', {value: v}, v.replace('|', '  ·  ') + '  ' + T('(no está)')) : null);
+    }
     default:
       return h('input', {type: 'text', value: v, oninput: e => poner(e.target.value, false)});
   }
@@ -402,10 +425,10 @@ function explorar(modo, inicial) {
     let actual = '';
     const cerrar = v => { velo.remove(); resolver(v); };
     const ir = async ruta => {
-      const r = await api('/api/explorar?ruta=' + encodeURIComponent(ruta));
+      const r = await api('/api/explorar?ruta=' + encodeURIComponent(ruta) + (modo === 'texto' ? '&todos=1' : ''));
       actual = r.ruta;
       donde.textContent = r.ruta || T('Este equipo');
-      elegir.disabled = !r.ruta || modo === 'fichero';
+      elegir.disabled = !r.ruta || modo === 'fichero' || modo === 'texto';
       const filas = [];
       // sin emojis de color: hay motores de navegador a los que algunos les sientan mal
       if (r.padre !== null && r.padre !== undefined) filas.push(h('div', {class: 'entrada', onclick: () => ir(r.padre)}, '↑  ' + T('subir')));
@@ -413,14 +436,14 @@ function explorar(modo, inicial) {
       for (const f of r.ficheros) {
         const lista = /\.(m3u8?|pls)$/i.test(f);
         if (modo === 'fichero' && lista) continue;
-        filas.push(h('div', {class: 'entrada fichero', onclick: () => cerrar(f)}, (lista ? '≡  ' : '♪  ') + f.split(/[\\/]/).pop()));
+        filas.push(h('div', {class: 'entrada fichero', onclick: () => cerrar(f)}, (lista ? '≡  ' : (modo === 'texto' ? '·  ' : '♪  ')) + f.split(/[\\/]/).pop()));
       }
       if (r.error) filas.push(h('div', {class: 'vacio'}, r.error));
       cuerpo.replaceChildren(...filas);
     };
     const elegir = h('button', {class: 'boton verde', onclick: () => cerrar(actual)}, T('Elegir esta carpeta'));
     const velo = h('div', {class: 'velo'}, h('div', {class: 'ventana'},
-      h('header', null, modo === 'fichero' ? T('Elegir un audio') : T('Elegir una carpeta, una lista o un audio')),
+      h('header', null, modo === 'texto' ? T('Elegir un fichero') : modo === 'fichero' ? T('Elegir un audio') : T('Elegir una carpeta, una lista o un audio')),
       cuerpo,
       h('footer', null, donde, h('button', {class: 'boton', onclick: () => cerrar(null)}, T('Cancelar')), elegir)));
     document.body.append(velo);
@@ -490,7 +513,9 @@ const SISTEMA = N_('Sistema');                // el tipo de las lineas del regis
 
 const PAGINAS = {
   franjas(sec) {
-    listaDetalle(sec, {
+    const abajo = h('div');
+    sec.replaceChildren(cajaPauta(), abajo);
+    listaDetalle(abajo, {
       id: 'franjas', titulo: N_('Programación'), esquema: ESQ.franja,
       items: () => CFG.franjas,
       fijo: () => ({obj: CFG.general, nombre: !CFG.general.nombre || CFG.general.nombre === GENERAL ? T(GENERAL) : CFG.general.nombre}),
@@ -612,6 +637,9 @@ const PAGINAS = {
       bloque(N_('Emisora'), ESQ.sistema, CFG),
       bloque(N_('Salida de audio'), ESQ.salida, CFG.salida),
       bloque(N_('Mezcla'), ESQ.mezcla, CFG.mezcla),
+      bloque(N_('Detector de silencio'), ESQ.silencio, CFG.silencio),
+      bloque(N_('Reserva (playout espejo)'), ESQ.reserva, CFG.reserva),
+      h('p', {class: 'dato', id: 'reserva-estado', style: 'margin:-6px 0 16px;color:#fbbf24'}),
       bloque(N_('Panel web'), ESQ.web, CFG.web));
   },
   async registro(sec) {
@@ -623,6 +651,7 @@ const PAGINAS = {
           h('select', {value: r.fecha, onchange: e => pintar(e.target.value)}, r.dias.map(d => h('option', {value: d}, d))),
           h('button', {class: 'boton pequeno', onclick: () => pintar(r.fecha)}, T('Actualizar')),
           h('span', {class: 'sub'}, F('%d líneas', r.filas.length) + ' · ' + T('los ficheros están en datos/registro'))),
+        certificadoCaja(),
         r.filas.length ? h('table', null,
           h('thead', null, h('tr', null, [N_('Hora'), N_('Tipo'), N_('Título'), N_('Artista'), N_('Segundos'), N_('Nota')].map(x => h('th', null, T(x))))),
           h('tbody', null, r.filas.slice().reverse().map(f => h('tr', null,
@@ -634,6 +663,366 @@ const PAGINAS = {
     await pintar('');
   },
 };
+
+// ---------------------------------------------------------------- listas auxiliares, botonera, preescucha
+/* Manejo en directo: cada orden va al momento al servidor (POST /api/aux); no
+   pasa por «Guardar cambios». La pagina se monta una vez y luego solo se
+   repinta lo que cambia, para no perder la seleccion ni el desplazamiento. */
+
+const MODOS = [['manual', N_('Manual')], ['asistido', N_('Asistido')], ['automatico', N_('Automático')]];
+const CON_PRINCIPAL = [['encima', N_('Principal: encima')], ['bajar', N_('Principal: bajar')],
+                       ['silenciar', N_('Principal: silenciar')]];
+let AUX = null, AUXV = -1, AUXP = null;
+const AUXEL = [[], [], [], []];
+
+function menuFlotante(ev, opciones) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  document.querySelectorAll('.menu-flotante').forEach(m => m.remove());
+  const m = h('div', {class: 'menu-flotante'}, opciones.filter(Boolean).map(([texto, f]) =>
+    h('div', {onclick: () => { m.remove(); f(); }}, texto)));
+  document.body.append(m);
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(ev.clientX, innerWidth - r.width - 8)) + 'px';
+  m.style.top = Math.max(8, Math.min(ev.clientY, innerHeight - r.height - 8)) + 'px';
+  setTimeout(() => document.addEventListener('click', () => m.remove(), {once: true}), 0);
+}
+
+async function auxAccion(d) {
+  const r = await api('/api/aux', d);
+  if (r.mensaje) avisar(r.mensaje, r.ok ? 4000 : 8000);
+  refrescarAux();
+  return r;
+}
+
+function opcionesSelect(opciones, valor, cambio) {
+  return h('select', {value: valor, onchange: e => cambio(e.target.value)}, opciones.map(([v, t]) => h('option', {value: v}, T(t))));
+}
+
+function panelLista(n) {
+  const P = {n, sel: new Set()};
+  const L = () => AUX.listas[n];
+  const acc = (accion, d) => auxAccion(Object.assign({accion, lista: n}, d || {}));
+  const ajuste = campos => acc('ajustes', {campos});
+  P.nombre = h('span', {class: 'nombre'});
+  P.estado = h('span', {class: 'estado'});
+  P.titulo = h('span', {class: 't'});
+  P.resta = h('span', {class: 'r mono'});
+  P.artista = h('span', {class: 'a'});
+  P.intro = h('span', {class: 'i mono'});
+  P.va = h('span', {class: 'mono'});
+  P.barra = h('div');
+  P.modo = opcionesSelect(MODOS, 'asistido', v => ajuste({modo: v}));
+  P.modo.title = T('Manual: cada audio se lanza a mano. Asistido: encadena hasta un punto de parada. Automático: lo encadena todo.');
+  P.principal = opcionesSelect(CON_PRINCIPAL, 'encima', v => ajuste({principal: v}));
+  P.principal.title = T('Qué le pasa a la emisión principal mientras suena esta lista. La principal nunca se para: sigue su hora por debajo.');
+  P.filas = h('ul', {class: 'aux-filas'});
+  P.total = h('span', {class: 'total'});
+  const opciones = ev => {
+    const e = L();
+    const salidas = [[(e.salida ? '' : '● ') + T('Salida: con la emisión'), () => ajuste({salida: ''})]].concat(
+      SALIDAS.map(s => [(e.salida === s.api + '|' + s.nombre ? '● ' : '') + T('Salida: ') + s.api.replace('Windows ', '') + ' · ' + s.nombre,
+                        () => ajuste({salida: s.api + '|' + s.nombre})]));
+    menuFlotante(ev, [
+      [T('Cambiar el nombre…'), () => { const t = prompt(T('Nombre de la lista:'), e.nombre); if (t !== null) ajuste({nombre: t}); }],
+      [(e.bucle ? '✓ ' : '') + T('Bucle: al acabar, volver al principio'), () => ajuste({bucle: !e.bucle})],
+      [(e.titulo ? '✓ ' : '') + T('Anunciar el título (RDS, Icecast) mientras suena'), () => ajuste({titulo: !e.titulo})],
+      [F('Cuánto baja la principal… (%g dB)', e.bajada_db), () => {
+        const t = prompt(T('dB que baja la principal:'), e.bajada_db); if (t !== null) ajuste({bajada_db: parseFloat(t)}); }],
+      [F('Volumen de esta lista… (%g dB)', e.ganancia_db), () => {
+        const t = prompt(T('dB (sobre el volumen igualado):'), e.ganancia_db); if (t !== null) ajuste({ganancia_db: parseFloat(t)}); }],
+      ...salidas,
+      [T('Vaciar la lista'), () => { if (confirm(F('¿Quitar todos los audios de «%s»?', e.visible))) acc('vaciar'); }],
+    ]);
+  };
+  P.raiz = h('div', {class: 'tarjeta aux-lista'},
+    h('div', {class: 'aux-cab'}, P.nombre, P.estado, h('button', {class: 'boton pequeno', onclick: opciones}, T('Opciones') + ' ▾')),
+    h('div', {class: 'aux-que'}, P.titulo, P.resta),
+    h('div', {class: 'aux-sub'}, P.artista, P.intro, P.va),
+    h('div', {class: 'barra'}, P.barra),
+    h('div', {class: 'aux-mandos'},
+      h('button', {class: 'boton verde', title: T('Reproducir (o seguir tras la pausa)'), onclick: () => acc('reproducir')}, '▶'),
+      h('button', {class: 'boton', title: T('Pausa'), onclick: () => acc('pausa')}, '❚❚'),
+      h('button', {class: 'boton', title: T('Parar'), onclick: () => acc('parar')}, '■'),
+      h('button', {class: 'boton', title: T('Saltar al siguiente'), onclick: () => acc('siguiente')}, '⏭')),
+    h('div', {class: 'aux-ajustes'}, P.modo, P.principal),
+    P.filas,
+    h('div', {class: 'aux-pie'},
+      h('button', {class: 'boton pequeno', onclick: async () => {
+        const r = await explorar('cualquiera', '');
+        if (r) acc('anadir', {rutas: [r]});
+      }}, '+ ' + T('Audios, carpeta o lista…')),
+      P.total));
+  P.repoblar = () => {
+    const els = AUXEL[n];
+    P.sel = new Set([...P.sel].filter(i => i < els.length));
+    P.filas.replaceChildren(...els.map((d, i) => h('li', {draggable: 'true', title: d.ruta,
+      onclick: ev => { if (!ev.ctrlKey) P.sel.clear(); if (P.sel.has(i)) P.sel.delete(i); else P.sel.add(i); P.marcar(); },
+      ondblclick: () => acc('reproducir', {indice: i}),
+      ondragstart: ev => ev.dataTransfer.setData('text/plain', String(i)),
+      ondragover: ev => ev.preventDefault(),
+      ondrop: ev => {
+        ev.preventDefault();
+        const de = parseInt(ev.dataTransfer.getData('text/plain'), 10);
+        if (!isNaN(de) && de !== i) acc('mover', {indice: de, destino: i});
+      },
+      oncontextmenu: ev => {
+        const elegidas = P.sel.has(i) ? [...P.sel] : [i];
+        menuFlotante(ev, [
+          [T('Reproducir ahora'), () => acc('reproducir', {indice: i})],
+          [T('Poner como siguiente'), () => acc('cue', {indice: i})],
+          [(d.parar ? '✓ ' : '') + T('Punto de parada después de este'), () => acc('parada', {indice: i})],
+          [T('Preescuchar'), () => acc('preescuchar', {indice: i})],
+          [T('Preescuchar el final'), () => acc('preescuchar', {indice: i, final: true})],
+          [T('Intro…'), async () => {
+            const t = prompt(T('Segundos de intro (0 = sin marca):'), d.intro || 0);
+            if (t === null) return;
+            const r = await api('/api/intro', {ruta: d.ruta, segundos: parseFloat(t) || 0});
+            avisar(r.mensaje); AUXV = -1; refrescarAux();
+          }],
+          i > 0 ? [T('Subir'), () => acc('mover', {indice: i, destino: i - 1})] : null,
+          i < els.length - 1 ? [T('Bajar'), () => acc('mover', {indice: i, destino: i + 1})] : null,
+          [T('Quitar de la lista') + (elegidas.length > 1 ? '  (' + elegidas.length + ')' : ''),
+           () => { P.sel.clear(); acc('quitar', {indices: elegidas}); }],
+        ]);
+      }},
+      h('span', {class: 'n mono'}, String(i + 1)),
+      h('span', {class: 't'}, d.titulo, d.artista ? h('span', {class: 'sub'}, '  —  ' + d.artista) : null),
+      d.intro ? h('span', {class: 'i mono'}, 'i' + Math.round(d.intro)) : null,
+      d.parar ? h('span', {class: 'p', title: T('Punto de parada')}) : null,
+      h('span', {class: 'd mono'}, d.dur ? mmss(d.dur) : (d.pendiente ? '…' : '—')))));
+    P.marcar();
+  };
+  P.marcar = () => {
+    const e = L();
+    [...P.filas.children].forEach((li, i) => {
+      li.classList.toggle('suena', e.estado === 'sonando' && i === e.actual);
+      li.classList.toggle('sig', i === e.cursor);
+      li.classList.toggle('sel', P.sel.has(i));
+    });
+  };
+  P.pintar = () => {
+    const e = L();
+    P.nombre.textContent = e.visible;
+    P.estado.textContent = T({sonando: N_('sonando'), pausa: N_('en pausa'), parado: N_('parada')}[e.estado]) +
+      (e.salida ? '  ·  ' + F('por %s', e.salida.split('|').pop()) : '');
+    if (document.activeElement !== P.modo) P.modo.value = e.modo;
+    if (document.activeElement !== P.principal) P.principal.value = e.principal;
+    if (e.elementos) { AUXEL[n] = e.elementos; P.repoblar(); } else P.marcar();
+    const partes = [e.n_elementos === 1 ? T('1 audio') : F('%d audios', e.n_elementos)];
+    if (e.total) partes.push(mmss(e.total));
+    if (e.resta !== null && e.estado === 'sonando') partes.push(F('se para a las %s', hora(e.fin)));
+    P.total.textContent = partes.join('  ·  ');
+    P.tic();
+  };
+  P.tic = () => {
+    const e = L();
+    if (e.estado === 'sonando' || e.estado === 'pausa') {
+      const va = e.estado === 'pausa' ? e.va : Math.max(0, ahora() - e.t_ini);
+      P.titulo.textContent = e.que;
+      P.artista.textContent = e.quien || '';
+      P.barra.style.width = e.dur ? Math.min(100, 100 * va / e.dur) + '%' : '0';
+      P.va.textContent = mmss(va) + (e.dur ? ' / ' + mmss(e.dur) : '');
+      P.resta.textContent = e.estado === 'sonando' ? (e.dur ? '-' + mmss(e.dur - va) : '') : T('PAUSA');
+      P.intro.textContent = e.estado === 'sonando' && e.intro > va ? F('INTRO %s', mmss(e.intro - va)) : '';
+    } else {
+      const sig = AUXEL[n][e.cursor];
+      P.titulo.textContent = !e.n_elementos ? T('Lista vacía') : (sig ? F('Siguiente: %s', sig.titulo) : T('Al final de la lista'));
+      P.artista.textContent = P.va.textContent = P.resta.textContent = P.intro.textContent = '';
+      P.barra.style.width = '0';
+    }
+  };
+  return P;
+}
+
+function paginaAuxiliares(sec) {
+  const paneles = [0, 1, 2, 3].map(panelLista);
+  const pads = [];
+  const padsCaja = h('div', {class: 'pads'});
+  for (let i = 0; i < 16; i++) {
+    const P = {num: h('span', {class: 'num'}, String(i + 1)), dur: h('span', {class: 'dur mono'}),
+               lleno: h('div', {class: 'lleno'}), texto: h('span')};
+    const asignar = async () => { const r = await explorar('fichero', ''); if (r) auxAccion({accion: 'asignar', boton: i, ruta: r}); };
+    P.el = h('div', {class: 'pad vacio',
+      onclick: () => { if (AUX.botonera.botones[i].ruta) auxAccion({accion: 'disparar', boton: i}); else asignar(); },
+      oncontextmenu: ev => {
+        const b = AUX.botonera.botones[i];
+        menuFlotante(ev, [
+          [T('Asignar un audio…'), asignar],
+          b.ruta ? [T('Cambiar la etiqueta…'), () => {
+            const t = prompt(T('Texto del botón:'), b.propia ? b.etiqueta : '');
+            if (t !== null) auxAccion({accion: 'boton', boton: i, campos: {etiqueta: t}}); }] : null,
+          b.ruta ? [(b.bucle ? '✓ ' : '') + T('En bucle (un colchón)'), () => auxAccion({accion: 'boton', boton: i, campos: {bucle: !b.bucle}})] : null,
+          b.ruta ? [T('Preescuchar'), () => auxAccion({accion: 'preescuchar', boton: i})] : null,
+          b.ruta ? [T('Quitar el audio'), () => auxAccion({accion: 'asignar', boton: i, ruta: ''})] : null,
+        ]);
+      }}, P.lleno, P.num, P.texto, P.dur);
+    pads.push(P);
+    padsCaja.append(P.el);
+  }
+  const bPrincipal = opcionesSelect(CON_PRINCIPAL, 'encima', v => auxAccion({accion: 'botonera', campos: {principal: v}}));
+  const preSel = h('select', {style: 'width:100%', onchange: e => {
+    const [api_, nombre] = e.target.value ? e.target.value.split('|') : ['', ''];
+    auxAccion({accion: 'dispositivo_preescucha', api: api_, dispositivo: nombre || ''});
+  }}, h('option', {value: ''}, T('Predeterminada del sistema')),
+     SALIDAS.map(s => h('option', {value: s.api + '|' + s.nombre}, s.api.replace('Windows ', '') + ' · ' + s.nombre)));
+  const preMisma = h('div', {class: 'resumen mal'}, T('Ojo: es la misma tarjeta que la emisión, la preescucha se oiría en antena.'));
+  const preQue = h('div', {style: 'font-weight:600;margin-top:8px'});
+  const preBarra = h('div');
+  const preT = h('span', {class: 'mono sub', style: 'flex:1'});
+  const aviso = h('div', {class: 'dato', style: 'color:#fbbf24;margin:0 0 10px;white-space:pre-line'});
+  sec.replaceChildren(h('div', {class: 'aux'},
+    h('div', {class: 'aux-listas'}, paneles.map(p => p.raiz)),
+    h('div', null,
+      h('button', {class: 'boton rojo', style: 'width:100%;margin-bottom:12px;padding:12px',
+        title: T('Para las cuatro listas y la botonera (la emisión principal sigue)'),
+        onclick: () => auxAccion({accion: 'parar_todo'})}, '■ ' + T('PARAR TODO')),
+      aviso,
+      h('div', {class: 'tarjeta', style: 'margin-bottom:14px'}, h('h2', null, T('Botonera')), padsCaja,
+        h('div', {class: 'acciones', style: 'margin-top:10px'}, bPrincipal,
+          h('button', {class: 'boton pequeno', onclick: () => auxAccion({accion: 'parar_botonera'})}, T('Parar botonera'))),
+        h('p', {class: 'dato'}, T('Clic: lanzar o parar. Clic derecho: asignar, etiqueta, bucle.'))),
+      h('div', {class: 'tarjeta'}, h('h2', null, T('Preescucha')), preSel, preMisma, preQue,
+        h('div', {class: 'barra', style: 'height:7px'}, preBarra),
+        h('div', {class: 'acciones'}, preT,
+          h('button', {class: 'boton pequeno', title: T('Púlsalo justo cuando entra la voz: queda apuntado dónde acaba la intro'),
+            onclick: async () => {
+              const r = await api('/api/intro', {preescucha: true});
+              avisar(r.mensaje, r.ok ? 4000 : 8000); AUXV = -1; refrescarAux();
+            }}, T('Marcar intro aquí')),
+          h('button', {class: 'boton pequeno', onclick: () => auxAccion({accion: 'parar_preescucha'})}, '■'))))));
+  AUXP = {paneles, pads, bPrincipal, preSel, preMisma, preQue, preBarra, preT, aviso};
+  AUXV = -1;
+  refrescarAux();
+}
+
+async function refrescarAux() {
+  if (pagina !== 'auxiliares' || !AUXP) return;
+  try { AUX = await api('/api/aux?v=' + AUXV); } catch (e) { return; }
+  AUXV = AUX.version;
+  AUXP.paneles.forEach(p => p.pintar());
+  if (document.activeElement !== AUXP.bPrincipal) AUXP.bPrincipal.value = AUX.botonera.principal;
+  const pre = AUX.preescucha;
+  if (document.activeElement !== AUXP.preSel) AUXP.preSel.value = pre.dispositivo ? pre.api + '|' + pre.dispositivo : '';
+  AUXP.preMisma.hidden = !pre.misma;
+  const textos = [];
+  if (!AUX.listo) textos.push(T('No se está emitiendo: las listas que salen con la emisión y la botonera esperan a que empiece. Las que tienen su propia tarjeta funcionan igual.'));
+  if (AUX.emergencia.activa) textos.push(T('LISTA DE EMERGENCIA EN ANTENA: la emisión principal está en silencio.'));
+  AUX.avisos.slice(-2).forEach(a => textos.push(a.texto));
+  AUXP.aviso.textContent = textos.join('\n');
+  ticAux();
+}
+
+function ticAux() {
+  if (pagina !== 'auxiliares' || !AUXP || !AUX) return;
+  AUXP.paneles.forEach(p => p.tic());
+  AUX.botonera.botones.forEach((b, i) => {
+    const P = AUXP.pads[i];
+    const va = b.sonando ? Math.max(0, ahora() - b.t_ini) : 0;
+    P.el.className = 'pad' + (b.ruta ? '' : ' vacio') + (b.sonando ? ' suena' : '');
+    P.el.title = b.ruta || T('Sin audio: clic para asignar uno');
+    P.texto.textContent = b.etiqueta || '';
+    P.num.textContent = String(i + 1) + (b.bucle ? '  ∞' : '');
+    P.dur.textContent = b.dur ? (b.sonando ? '-' + mmss(b.dur - va) : mmss(b.dur)) : '';
+    P.lleno.style.width = b.sonando && b.dur ? Math.min(100, 100 * va / b.dur) + '%' : '0';
+  });
+  const pre = AUX.preescucha;
+  if (pre.sonando) {
+    const va = pre.va + Math.max(0, ahora() - AUX.ahora);
+    AUXP.preQue.textContent = pre.que;
+    AUXP.preBarra.style.width = pre.dur ? Math.min(100, 100 * va / pre.dur) + '%' : '0';
+    AUXP.preT.textContent = mmss((pre.ofs || 0) + va) + (pre.dur ? ' / ' + mmss((pre.ofs || 0) + pre.dur) : '');
+  } else {
+    AUXP.preQue.textContent = T('Nada en preescucha');
+    AUXP.preBarra.style.width = '0';
+    AUXP.preT.textContent = '';
+  }
+}
+
+// ---------------------------------------------------------------- grabaciones
+let GRAB = null;
+function paginaGrabaciones(sec) {
+  const estado = h('div', {class: 'dato', style: 'white-space:pre-line;margin:0'}, T('Nada.'));
+  const medio = h('div', {style: 'margin:16px 0'});
+  const abajo = h('div');
+  const pintarAbajo = () => abajo.replaceChildren(h('div', {class: 'tarjeta'}, h('h2', null, T('Logger de antena')),
+    formulario(ESQ.logger, CFG.logger, pintarAbajo)));
+  sec.replaceChildren(h('div', {class: 'tarjeta'}, h('h2', null, T('Grabando ahora')), estado), medio, abajo);
+  pintarAbajo();
+  listaDetalle(medio, {
+    id: 'grabaciones', titulo: N_('Grabaciones programadas'), esquema: ESQ.grabacion,
+    items: () => CFG.grabaciones, activo: g => g.activa, nuevo: () => NUEVOS.grabacion,
+    sub: g => pad(g.hora) + ':' + pad(g.minuto) + ' · ' + g.duracion + ' min',
+    nota: N_('Líneas, corresponsales o conexiones que hay que grabar a una hora. Al acabar, la grabación puede entrar sola en una lista auxiliar.'),
+    vacio: N_('No hay grabaciones programadas. Pulsa «Añadir».')});
+  GRAB = estado;
+  refrescarGrab();
+}
+async function refrescarGrab() {
+  if (pagina !== 'grabaciones' || !GRAB) return;
+  let g;
+  try { g = await api('/api/grabaciones'); } catch (e) { return; }
+  const nombre = f => f.split(/[\\/]/).pop();
+  const lineas = g.en_curso.map(x => '●  ' + x.nombre + '  —  ' + nombre(x.fichero) + '  (' + F('quedan %s', mmss(x.resta)) + ')');
+  if (g.logger) lineas.push('●  ' + T('Logger de antena') + '  —  ' + g.logger.fichero);
+  g.terminadas.slice(0, 5).forEach(x => lineas.push(hora(x.t) + '  ' + x.nombre + '  —  ' + nombre(x.fichero) +
+    (x.error ? '   ' + F('ERROR: %s', x.error) : '')));
+  GRAB.textContent = lineas.join('\n') || T('Nada.');
+}
+
+// ---------------------------------------------------------------- importar una pauta
+function cajaPauta() {
+  const d = {fichero: '', destino: '', audios: '', tipo: 'musica', fecha: ''};
+  const caja = h('div', {class: 'tarjeta', style: 'margin-bottom:16px'});
+  let abierta = false;
+  const pintar = () => {
+    if (!abierta) {
+      caja.replaceChildren(h('div', {class: 'acciones', style: 'align-items:center'},
+        h('h2', {style: 'margin:0;flex:1'}, T('Pautas importadas')),
+        h('button', {class: 'boton pequeno', onclick: () => { abierta = true; pintar(); }}, T('Importar una pauta (música o publicidad)…'))));
+      return;
+    }
+    const fila = (etq, ctl) => h('div', {class: 'campo'}, h('label', null, etq), h('div', {class: 'valor'}, ctl));
+    const fichero = h('input', {type: 'text', value: d.fichero, oninput: e => { d.fichero = e.target.value; }});
+    caja.replaceChildren(h('h2', null, T('Importar una pauta')),
+      fila(T('Fichero exportado'), h('div', {class: 'ruta'}, fichero, h('button', {class: 'boton pequeno', onclick: async () => {
+        const r = await explorar('texto', d.fichero);
+        if (r) { d.fichero = r; fichero.value = r; }
+      }}, T('Examinar…')))),
+      fila(T('Es de'), h('select', {value: d.tipo, onchange: e => { d.tipo = e.target.value; }},
+        h('option', {value: 'musica'}, T('Música: una lista por hora')),
+        h('option', {value: 'publicidad'}, T('Publicidad: una lista por corte (hora y minuto del bloque)')))),
+      fila(T('Fecha'), [h('input', {type: 'date', value: d.fecha, onchange: e => { d.fecha = e.target.value; }}),
+                        h('span', {class: 'sub'}, T('vacía: la que traiga el fichero (o su nombre)'))]),
+      fila(T('Dejar las listas en'), controlOrigen('carpeta', () => d.destino, v => { d.destino = v; })),
+      fila(T('Carpeta de los audios'), controlOrigen('carpeta', () => d.audios, v => { d.audios = v; })),
+      h('p', {class: 'dato'}, T('Vale casi cualquier exportación de texto (MusicMaster, Selector, Powergold, el programa de publicidad): de cada línea se saca la hora y el audio, como ruta, como nombre de fichero o como número de cartucho (el fichero de la carpeta de los audios cuyo nombre empieza por él). Luego pon «Pauta importada» en el orden de la franja o del bloque, con esa carpeta.')),
+      h('div', {class: 'acciones'},
+        h('button', {class: 'boton verde', onclick: async () => {
+          if (!d.fichero || !d.destino) { avisar(T('Falta el fichero o la carpeta donde dejar las listas.')); return; }
+          const r = await api('/api/pauta', d);
+          avisar(r.ok ? F('Pauta importada: %s', r.mensaje) : F('No se ha podido importar: %s', r.mensaje), 9000);
+        }}, T('Importar')),
+        h('button', {class: 'boton', onclick: () => { abierta = false; pintar(); }}, T('Cerrar'))));
+  };
+  pintar();
+  return caja;
+}
+
+// ---------------------------------------------------------------- certificado de emision
+function certificadoCaja() {
+  const hoy = new Date((ahora() + TZ) * 1000).toISOString().slice(0, 10);
+  const desde = h('input', {type: 'date', value: hoy.slice(0, 8) + '01'});
+  const hasta = h('input', {type: 'date', value: hoy});
+  const filtro = h('input', {type: 'text', placeholder: T('anunciante o campaña (opcional)'), style: 'width:220px'});
+  return h('div', {class: 'acciones', style: 'margin:0 0 14px;align-items:center'},
+    h('span', {class: 'sub'}, T('Certificado de emisión') + ':'), desde, hasta, filtro,
+    h('button', {class: 'boton pequeno', onclick: () => window.open('/api/certificado?desde=' + desde.value + '&hasta=' + hasta.value +
+      '&filtro=' + encodeURIComponent(filtro.value), '_blank', 'noopener')}, T('Abrir para imprimir')));
+}
+
+PAGINAS.auxiliares = paginaAuxiliares;
+PAGINAS.grabaciones = paginaGrabaciones;
 
 let pagina = 'emision';
 function pintarPagina() {
@@ -651,5 +1040,8 @@ $('#nav').addEventListener('click', e => {
   await refrescar();
   setInterval(refrescar, 500);
   setInterval(tic, 250);
+  setInterval(refrescarAux, 500);
+  setInterval(ticAux, 200);
+  setInterval(refrescarGrab, 2000);
   try { await cargarConfig(); pintarPagina(); } catch (e) { avisar(F('No se ha podido leer la configuración: %s', e.message), 10000); }
 })();

@@ -25,6 +25,7 @@ nada aleatorio: con la misma rotacion y las mismas horas sale el mismo plan,
 asi que replanificar no baraja lo que ya se habia anunciado.
 """
 
+import copy
 import itertools
 import math
 from collections import deque
@@ -32,6 +33,8 @@ from datetime import datetime
 
 import numpy as np
 
+from . import pautas
+from .analisis import Pista
 from .idioma import tr
 
 PLAN, PREP, PROG, AIRE, FIN, ERROR = "plan", "prep", "prog", "aire", "fin", "error"
@@ -349,7 +352,26 @@ class Planificador:
                 ocupados.append(pj.ruta)
         return a
 
+    def _ancla_enlace(self, h0: float, ev):
+        """
+        Network join: a su hora, la emision se engancha al directo de la cadena
+        (un stream o una entrada de tarjeta) y lo da durante `duracion` exactos.
+        """
+        origen = ev.enlace.strip() or ("entrada:" + ev.entrada)
+        p = Pista(ruta=origen, dur=ev.duracion, cue_in=0.0, cue_out=float(ev.duracion), titulo=ev.nombre)
+        a = AnclaAudio("evento", h0 + ev.desfase())
+        a.nombre = ev.nombre
+        it = Item("enlace", p)
+        it.suena = float(ev.duracion)                     # y ni un frame mas, se atasque o no el directo
+        it.fundido = min(0.5, it.suena / 4.0)
+        it.dur = it.suena
+        a.piezas.append(it)
+        a.dur = it.suena
+        return a
+
     def _ancla_evento(self, h0: float, ev, ocupados, plan):
+        if ev.tipo == "enlace":
+            return self._ancla_enlace(h0, ev)
         p = self._primero(ev.origen, ev.orden, ocupados)
         if p is None:
             plan.incompleto |= self.sur.pendiente(ev.origen)
@@ -394,6 +416,13 @@ class Planificador:
 
     def _contenido(self, b, n: float, plan, pase: "Pase") -> list:
         """Las piezas del contenido de un bloque, con su desfase desde que empieza el contenido."""
+        if b.orden == "pauta":
+            # publicidad importada: las cunas de este corte, en su orden
+            b = copy.copy(b)
+            b.origen = pautas.archivo_corte(b.origen, plan.h0, b.minuto) if b.origen else ""
+            b.orden = "secuencial"
+            if not b.origen:
+                plan.avisos.append(tr("«%s»: no hay pauta importada para este corte") % b.nombre)
         if b.contenido == "relleno":
             piezas = self._relleno(b.relleno_origen, 0.0, n, pase)
             if not piezas and b.relleno_origen:
@@ -515,7 +544,7 @@ class Planificador:
         """
         cfg = self.cfg
         momento = datetime.fromtimestamp(h0 + 1)
-        franja = cfg.franja_de(momento)
+        franja = self.franja_hora(cfg.franja_de(momento), h0)
         dia, hora = momento.weekday(), momento.hour
         plan = PlanHora(h0, franja)
         pase = Pase() if pase is None else pase
@@ -535,7 +564,7 @@ class Planificador:
                 anclas.append(AnclaCruce(h0))
         if franja.eventos:
             for ev in cfg.eventos:
-                if ev.origen and ev.cubre(dia, hora):
+                if ev.valido() and ev.cubre(dia, hora):
                     a = self._ancla_evento(h0, ev, ocupados, plan)
                     if a is not None:
                         anclas.append(a)
@@ -581,6 +610,20 @@ class Planificador:
         if llenar:
             self.llenar_plan(plan, pase)
         return plan
+
+    @staticmethod
+    def franja_hora(franja, h0: float):
+        """
+        Una franja con pauta importada toca en cada hora la lista de esa hora,
+        en su orden (gimel/pautas.py). Si esa hora no tiene, se queda sin
+        canciones propias y tira de la programacion general.
+        """
+        if franja.orden != "pauta":
+            return franja
+        f = copy.copy(franja)
+        f.canciones = pautas.archivo_hora(franja.canciones, h0) if franja.canciones else ""
+        f.orden = "secuencial"
+        return f
 
     @staticmethod
     def horario_anclas(plan: PlanHora) -> None:

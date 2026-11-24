@@ -31,15 +31,15 @@ from datetime import datetime
 
 from . import config as modconfig
 from . import cue as modcue
-from .fuentes import FuenteFFmpeg, FuenteMemoria
+from .fuentes import FuenteDirecto, FuenteFFmpeg, FuenteMemoria
 from .idioma import N_, tr
-from .motor import Voz
+from .motor import SISTEMA, Voz
 from .planificador import (AIRE, ERROR, FIN, PLAN, PREP, PROG, TOL_FALTA, AnclaAudio,
                            AnclaBloque, AnclaCruce, Cancion, Pase, Planificador, Tramo,
                            hora_en_punto)
 from .registro import Registro
 
-PRINCIPALES = ("cancion", "senal", "evento", "cuna", "relleno", "jingle_publi")
+PRINCIPALES = ("cancion", "senal", "evento", "cuna", "relleno", "jingle_publi", "enlace")
 
 
 class Emisor:
@@ -548,7 +548,10 @@ class Emisor:
         if it.fuente is not None:
             return
         p = it.pista
-        it.fuente = FuenteFFmpeg(self.ffmpeg, p.ruta, p.cue_in, p.cue_out, self.motor.fs, self.soxr)
+        if it.tipo == "enlace":                          # el directo de la cadena: ver FuenteDirecto
+            it.fuente = FuenteDirecto(self.ffmpeg, p.ruta, p.largo, self.motor.fs)
+        else:
+            it.fuente = FuenteFFmpeg(self.ffmpeg, p.ruta, p.cue_in, p.cue_out, self.motor.fs, self.soxr)
         it.fuente.preparar()
         if it.estado == PLAN:
             it.estado = PREP
@@ -818,8 +821,9 @@ class Emisor:
                 for f, plantilla, datos in ((f1, d.inicio, d1), (f2, d.retorno, d2)):
                     tonos = modcue.tonos_dtmf(modcue.componer(plantilla, datos), fs)
                     if len(tonos):
+                        # SISTEMA: una lista auxiliar que silencie la principal no se los come
                         self.motor.orden("voz", Voz(FuenteMemoria(tonos),
-                                                    f - int(round(adelanto * fs))))
+                                                    f - int(round(adelanto * fs)), grupo=SISTEMA))
 
     # ============================================================ lo que va pasando
 
@@ -993,7 +997,7 @@ class Emisor:
             if it.jingle is not None:
                 nota = (nota + " · " if nota else "") + tr("jingle encima del cruce")
         return {"t": it.t_ini, "tipo": it.tipo, "titulo": p.titulo or p.nombre(),
-                "artista": p.artista, "dur": it.dur, "estado": it.estado, "nota": nota}
+                "artista": p.artista, "dur": it.dur, "estado": it.estado, "nota": nota, "ruta": p.ruta}
 
     @staticmethod
     def _filas_bloque(a: AnclaBloque, ahora: float) -> list:

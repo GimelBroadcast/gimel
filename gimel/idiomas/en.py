@@ -17,6 +17,8 @@ IGUAL = (
     "s", "ms", "dB", "LUFS", "kbps", "%d min", "%d h %d min", "%d audio",
     "WASAPI", "DirectSound", "MME", "Ogg Vorbis", "Ogg Opus",
     "48 000 Hz", "44 100 Hz", "32 000 Hz", "22 050 Hz", "Español", "English",
+    # 1.2
+    "Manual", "Intro", "INTRO", "INTRO %s", "dBFS", "min", "MP3", "Intro…",
 )
 
 TEXTOS = {
@@ -602,4 +604,534 @@ TEXTOS = {
     "Idioma": "Language",
     "De la ventana, del panel web y de los avisos de la emisión.":
         "Of the window, the web panel and the broadcast notices.",
+
+    # ---------------------------------------------------------------- 1.2: directo (auxiliares, botonera,
+    # preescucha, intro, locutor), silencio, enlace con la cadena, grabaciones, pautas, certificado, reserva
+    "Asistido":
+        "Live assist",
+    "Automático":
+        "Automatic",
+    "Encima de la principal":
+        "Over the main playout",
+    "Bajar la principal":
+        "Duck the main playout",
+    "Silenciar la principal":
+        "Mute the main playout",
+    "Principal: encima":
+        "Main: over",
+    "Principal: bajar":
+        "Main: duck",
+    "Principal: silenciar":
+        "Main: mute",
+    "Las listas auxiliares y la botonera suenan por la salida de la emisión: empieza a emitir primero.":
+        "The aux lists and the cart wall play through the broadcast output: go on air first.",
+    "Emergencia":
+        "Emergency",
+    "La lista está vacía.":
+        "The list is empty.",
+    "Ahí no hay audios que añadir.":
+        "There is no audio there to add.",
+    "Ese botón no tiene audio.":
+        "That button has no audio.",
+    "Eso no es un audio.":
+        "That is not an audio file.",
+    "No se encuentra ffmpeg.":
+        "ffmpeg cannot be found.",
+    "Auxiliar %d":
+        "Aux %d",
+    "La emisión lleva %d s en silencio: entra la lista de emergencia":
+        "The broadcast has been silent for %d s: the emergency list goes on air",
+    "orden ilegible":
+        "unreadable command",
+    "Silencio en la emisión: entra la lista de emergencia":
+        "Silence on air: the emergency list goes on air",
+    "%d audios añadidos.":
+        "%d audio files added.",
+    "Vuelve la emisión: se retira la lista de emergencia":
+        "The broadcast is back: the emergency list is taken off",
+    "No se puede abrir la salida de «%s»: %s":
+        "Cannot open the output of “%s”: %s",
+    "No se puede abrir la tarjeta de preescucha: %s":
+        "Cannot open the preview sound card: %s",
+    "Botonera":
+        "Cart wall",
+    "Botón %d":
+        "Button %d",
+    "%d botones sonando":
+        "%d buttons playing",
+    "Certificado de emisión":
+        "Proof of play",
+    "Periodo":
+        "Period",
+    "Pases emitidos":
+        "Spots aired",
+    "Resumen por cuña":
+        "Summary by spot",
+    "Pases":
+        "Airings",
+    "Detalle de pases":
+        "Airing detail",
+    "Generado el":
+        "Generated on",
+    "Ninguna":
+        "None",
+    "Filtro":
+        "Filter",
+    "Grabación":
+        "Recording",
+    "Carpeta (con sus subcarpetas) o lista .m3u / .pls de la que sale la música. Con «Pauta importada», la carpeta donde se importan las pautas (Archivo > Importar pauta).":
+        "Folder (with its subfolders) or .m3u / .pls playlist the music comes from. With “Imported log”, the folder logs are imported into (File > Import a log).",
+    "Pauta importada: cada hora suena la lista de esa hora que haya mandado el planificador de música (MusicMaster, Selector, Powergold…), en su orden; GIMEL la cuadra. Una hora sin pauta tira de la programación general.":
+        "Imported log: each hour plays the list for that hour sent by the music scheduler (MusicMaster, Selector, Powergold…), in its order; GIMEL fits it to the hour. An hour without a log falls back to the general programming.",
+    "Con «Pauta importada», la carpeta donde se importa la pauta de publicidad.":
+        "With “Imported log”, the folder the traffic log is imported into.",
+    "Pauta importada: en cada corte, las cuñas que mande el programa de publicidad para esa hora y ese minuto, en su orden.":
+        "Imported log: in each break, the spots the traffic system sends for that hour and minute, in their order.",
+    "Enlace con la cadena (network join): a esa hora exacta la emisión se engancha al directo de la cadena, por un stream o por una entrada de la tarjeta, y lo da durante el tiempo que digas. Si el directo se corta, sale silencio y se reconecta; la hora sigue cuadrando.":
+        "Network join: at that exact time the broadcast joins the network feed, from a stream or a sound card input, and carries it for the time you set. If the feed drops, silence goes out and it reconnects; the hour stays exact.",
+    "Un audio":
+        "An audio file",
+    "Enlace con la cadena (directo)":
+        "Network join (live feed)",
+    "Stream de la cadena":
+        "Network stream",
+    "URL del directo (http://…/cadena.mp3). Vacío: la entrada de tarjeta de abajo.":
+        "URL of the live feed (http://…/network.mp3). Empty: the sound card input below.",
+    "O entrada de tarjeta":
+        "Or sound card input",
+    "La línea por la que llega la cadena (un receptor de satélite, un códec).":
+        "The line the network arrives on (a satellite receiver, a codec).",
+    "Vigilar el silencio":
+        "Watch for silence",
+    "Si la emisión principal se queda muda (una carpeta que desaparece, un directo caído), entra sola una lista de emergencia, en bucle, encima de la principal. Cuando la principal vuelve a sonar, la de emergencia se retira con un fundido.":
+        "If the main broadcast goes silent (a folder that disappears, a dropped feed), an emergency list goes on air by itself, looping, over the main playout. When the main playout sounds again, the emergency list fades out.",
+    "Silencio que hace saltar la emergencia":
+        "Silence that triggers the emergency list",
+    "Más que el negro de un bloque de publicidad, para que no salte en cada desconexión.":
+        "Longer than the dead air of an ad block, so it does not trigger on every break.",
+    "Por debajo de este nivel es silencio":
+        "Below this level counts as silence",
+    "Lista de emergencia":
+        "Emergency list",
+    "Carpeta o lista con la música de reserva.":
+        "Folder or playlist with the backup music.",
+    "Retirarla con la principal sonando":
+        "Take it off when the main playout has sounded for",
+    "Grabación activa":
+        "Recording enabled",
+    "Va en el nombre del fichero, con la fecha y la hora.":
+        "It goes in the file name, with the date and time.",
+    "Empieza a las":
+        "Starts at",
+    "Minuto":
+        "Minute",
+    "Qué se graba":
+        "What is recorded",
+    "Fuente":
+        "Source",
+    "Un stream (un corresponsal, otra emisora)":
+        "A stream (a correspondent, another station)",
+    "Una entrada de la tarjeta (una línea, un híbrido)":
+        "A sound card input (a line, a phone hybrid)",
+    "Lo que sale al aire":
+        "What goes on air",
+    "URL del stream":
+        "Stream URL",
+    "Entrada de tarjeta":
+        "Sound card input",
+    "Dónde":
+        "Where",
+    "Carpeta":
+        "Folder",
+    "WAV (sin pérdida)":
+        "WAV (lossless)",
+    "Al acabar, añadirla a":
+        "When finished, add it to",
+    "Ingesta: la grabación entra sola en una lista auxiliar, lista para lanzarla.":
+        "Ingest: the recording goes into an aux list by itself, ready to fire.",
+    "Ninguna lista":
+        "No list",
+    "Lista auxiliar 1":
+        "Aux list 1",
+    "Lista auxiliar 2":
+        "Aux list 2",
+    "Lista auxiliar 3":
+        "Aux list 3",
+    "Lista auxiliar 4":
+        "Aux list 4",
+    "Grabar todo lo que sale al aire":
+        "Record everything that goes on air",
+    "La prueba de lo emitido: un MP3 por hora en una carpeta por día. Graba mientras se emite.":
+        "Proof of what was broadcast: one MP3 per hour in one folder per day. It records while on air.",
+    "Guardar":
+        "Keep",
+    "Lo más viejo se borra solo. 0 = no borrar nunca.":
+        "Older files are deleted automatically. 0 = never delete.",
+    "días":
+        "days",
+    "Este equipo es la reserva de otro GIMEL":
+        "This computer is the backup of another GIMEL",
+    "Playout espejo: este equipo vigila al principal y, si deja de emitir, empieza a emitir él. La salida de los dos tiene que poder juntarse fuera (un conmutador con detector de silencio, o un punto de montaje de reserva en Icecast).":
+        "Mirror playout: this computer watches the main one and, if it stops broadcasting, goes on air itself. The outputs of both must be combined outside (a switcher with silence detection, or a fallback mount point in Icecast).",
+    "Panel web del principal":
+        "Web panel of the main playout",
+    "Por ejemplo http://192.168.1.10:8950. El principal tiene que tener el panel abierto a la red y con contraseña.":
+        "For example http://192.168.1.10:8950. The main playout must have its panel open to the network and with a password.",
+    "Contraseña del panel del principal":
+        "Password of the main playout's panel",
+    "Tomar el relevo tras":
+        "Take over after",
+    "Segundos sin saber del principal, o sin que emita.":
+        "Seconds without hearing from the main playout, or without it broadcasting.",
+    "Apartarse cuando el principal vuelva a emitir":
+        "Step aside when the main playout broadcasts again",
+    "Copiar la programación del principal":
+        "Copy the main playout's programming",
+    "Mientras no emite, cada minuto. No se copian la tarjeta, el panel web, Icecast ni esto. Las carpetas de música tienen que verse igual desde los dos equipos.":
+        "While not on air, every minute. The sound card, the web panel, Icecast and these settings are not copied. Music folders must look the same from both computers.",
+    "no hay ninguna entrada de audio":
+        "there is no audio input",
+    "Empieza una grabación":
+        "A recording starts",
+    "no ha llegado audio":
+        "no audio arrived",
+    "Grabación cortada":
+        "Recording cut short",
+    "Grabación terminada":
+        "Recording finished",
+    "ffmpeg ha dejado de grabar":
+        "ffmpeg stopped recording",
+    "Intro quitada.":
+        "Intro removed.",
+    "Intro de %s: %.1f s":
+        "Intro of %s: %.1f s",
+    "Logger de antena":
+        "Air logger",
+    "Ahora no suena ninguna canción.":
+        "No song is playing right now.",
+    "No se está preescuchando nada.":
+        "Nothing is being previewed.",
+    "%d audios en %d listas (%s).":
+        "%d audio files in %d lists (%s).",
+    "En ese fichero no hay ninguna línea con hora y audio.":
+        "That file has no line with a time and an audio file.",
+    "una por hora":
+        "one per hour",
+    "una por corte":
+        "one per break",
+    "%d no están en el disco.":
+        "%d are not on disk.",
+    "%d líneas sin audio reconocible.":
+        "%d lines without a recognizable audio file.",
+    "Pauta importada de %s":
+        "Log imported from %s",
+    "«%s»: no hay pauta importada para este corte":
+        "“%s”: there is no imported log for this break",
+    "Auxiliar":
+        "Aux",
+    "Enlace con la cadena":
+        "Network join",
+    "preguntando al principal…":
+        "asking the main playout…",
+    "EN RELEVO: el principal no emite y esta reserva está en antena":
+        "TAKEN OVER: the main playout is not broadcasting and this backup is on air",
+    "El principal vuelve a emitir: la reserva se aparta":
+        "The main playout is broadcasting again: the backup steps aside",
+    "el principal emite; esta reserva espera":
+        "the main playout is on air; this backup is waiting",
+    "El principal no emite: la reserva toma el relevo":
+        "The main playout is not broadcasting: the backup takes over",
+    "el principal contesta pero no emite":
+        "the main playout answers but is not broadcasting",
+    "el principal no contesta":
+        "the main playout does not answer",
+    "Todos":
+        "All",
+    "Reproducir (o seguir tras la pausa)":
+        "Play (or resume after pause)",
+    "Pausa":
+        "Pause",
+    "Parar":
+        "Stop",
+    "Saltar al siguiente":
+        "Skip to next",
+    "Manual: cada audio se lanza a mano. Asistido: encadena hasta un punto de parada. Automático: lo encadena todo.":
+        "Manual: each file is fired by hand. Live assist: segues up to a stop point. Automatic: segues everything.",
+    "Qué le pasa a la emisión principal mientras suena esta lista. La principal nunca se para: sigue su hora por debajo.":
+        "What happens to the main playout while this list plays. The main playout never stops: its hour keeps running underneath.",
+    "Una carpeta…":
+        "A folder…",
+    "Una lista .m3u / .pls…":
+        "An .m3u / .pls playlist…",
+    "Carpeta de audios":
+        "Audio folder",
+    "Lista":
+        "Playlist",
+    "Listas (*.m3u *.m3u8 *.pls)":
+        "Playlists (*.m3u *.m3u8 *.pls)",
+    "Cambiar el nombre…":
+        "Rename…",
+    "Bucle: al acabar, volver al principio":
+        "Loop: start over at the end",
+    "Anunciar el título (RDS, Icecast) mientras suena":
+        "Announce the title (RDS, Icecast) while playing",
+    "Salida":
+        "Output",
+    "Con la emisión (misma salida y mezcla)":
+        "With the broadcast (same output and mix)",
+    "Guardar la lista como…":
+        "Save the list as…",
+    "Vaciar la lista":
+        "Empty the list",
+    "Nombre de la lista:":
+        "List name:",
+    "dB que baja la principal:":
+        "dB the main playout is ducked:",
+    "dB (sobre el volumen igualado):":
+        "dB (on top of the normalized level):",
+    "Guardar la lista":
+        "Save the list",
+    "Lista (*.m3u8)":
+        "Playlist (*.m3u8)",
+    "sonando":
+        "playing",
+    "en pausa":
+        "paused",
+    "parada":
+        "stopped",
+    "Asignar un audio…":
+        "Assign an audio file…",
+    "Etiqueta":
+        "Label",
+    "Texto del botón:":
+        "Button text:",
+    "Para las cuatro listas y la botonera (la emisión principal sigue)":
+        "Stops the four lists and the cart wall (the main playout goes on)",
+    "Clic: lanzar o parar. Clic derecho: asignar, etiqueta, bucle. También se pueden soltar ficheros encima.":
+        "Click: fire or stop. Right click: assign, label, loop. You can also drop files on it.",
+    "Preescucha":
+        "Preview",
+    "Por qué tarjeta se preescucha (la de los cascos, no la de antena)":
+        "Sound card used for preview (the headphones one, not the on-air one)",
+    "Ojo: es la misma tarjeta que la emisión, la preescucha se oiría en antena.":
+        "Careful: it is the same sound card as the broadcast, the preview would be heard on air.",
+    "Marcar intro aquí":
+        "Mark intro here",
+    "Púlsalo justo cuando entra la voz: queda apuntado dónde acaba la intro":
+        "Press it right when the vocals come in: the end of the intro is noted",
+    "Segundos de intro (0 = sin marca):":
+        "Intro seconds (0 = no mark):",
+    "Opciones":
+        "Options",
+    "Añadir audios a %s":
+        "Add audio files to %s",
+    "Reproducir ahora":
+        "Play now",
+    "Poner como siguiente":
+        "Cue as next",
+    "Punto de parada después de este":
+        "Stop point after this one",
+    "Preescuchar":
+        "Preview",
+    "Preescuchar el final":
+        "Preview the ending",
+    "Añadir audios…":
+        "Add audio files…",
+    "Cuánto baja la principal… (%g dB)":
+        "How much the main playout is ducked… (%g dB)",
+    "Volumen de esta lista… (%+g dB)":
+        "Volume of this list… (%+g dB)",
+    "Volumen de esta lista… (%g dB)":
+        "Volume of this list… (%g dB)",
+    "1 audio":
+        "1 audio file",
+    "Audio del botón %d":
+        "Audio for button %d",
+    "Cambiar la etiqueta…":
+        "Change the label…",
+    "En bucle (un colchón)":
+        "Looped (a music bed)",
+    "Quitar el audio":
+        "Remove the audio",
+    "PARAR TODO":
+        "STOP ALL",
+    "Parar botonera":
+        "Stop cart wall",
+    "Nada en preescucha":
+        "Nothing in preview",
+    "No se está emitiendo: las listas que salen con la emisión y la botonera esperan a que empiece. Las que tienen su propia tarjeta funcionan igual.":
+        "Not on air: the lists that play with the broadcast and the cart wall wait for it to start. Lists with their own sound card work anyway.",
+    "LISTA DE EMERGENCIA EN ANTENA: la emisión principal está en silencio.":
+        "EMERGENCY LIST ON AIR: the main broadcast is silent.",
+    "Audios…":
+        "Audio files…",
+    "Carpeta o lista…":
+        "Folder or playlist…",
+    "Quitar de la lista":
+        "Remove from the list",
+    "¿Quitar todos los audios de «%s»?":
+        "Remove all audio files from “%s”?",
+    "por %s":
+        "via %s",
+    "Lista vacía":
+        "Empty list",
+    "se para a las %s":
+        "stops at %s",
+    "Sin audio: clic derecho para asignar uno, o suelta aquí un fichero":
+        "No audio: right click to assign one, or drop a file here",
+    "Lista guardada en %s":
+        "List saved to %s",
+    "PAUSA":
+        "PAUSED",
+    "Al final de la lista":
+        "At the end of the list",
+    "Siguiente: %s":
+        "Next: %s",
+    "CADENA":
+        "NETWORK",
+    "QUEDA":
+        "REMAINING",
+    "HORA EN PUNTO":
+        "TOP OF THE HOUR",
+    "LISTA DE EMERGENCIA EN ANTENA":
+        "EMERGENCY LIST ON AIR",
+    "ESTA ES LA RESERVA Y ESTÁ EN ANTENA":
+        "THIS IS THE BACKUP AND IT IS ON AIR",
+    "Pantalla de locutor":
+        "Presenter screen",
+    "SEÑAL HORARIA":
+        "TIME SIGNAL",
+    "Después:  %s%s   ·   %s":
+        "Next:  %s%s   ·   %s",
+    "BLOQUE":
+        "BLOCK",
+    "Entra primero en el panel web (tiene contraseña).":
+        "Log in to the web panel first (it has a password).",
+    "Cuenta atrás de la intro: hasta que entra la voz":
+        "Intro countdown: until the vocals come in",
+    "Marcar intro":
+        "Mark intro",
+    "Púlsalo justo cuando entra la voz de la canción que suena: queda apuntado dónde acaba su intro, para la cuenta atrás":
+        "Press it right when the vocals of the playing song come in: the end of its intro is noted, for the countdown",
+    "Grabando ahora":
+        "Recording now",
+    "Nada.":
+        "Nothing.",
+    "Grabaciones programadas":
+        "Scheduled recordings",
+    "anunciante o campaña (opcional)":
+        "advertiser or campaign (optional)",
+    "Desde":
+        "From",
+    "Hasta":
+        "To",
+    "Guardar el certificado":
+        "Save the proof of play",
+    "Página web (*.html)":
+        "Web page (*.html)",
+    "Detector de silencio":
+        "Silence detector",
+    "Reserva (playout espejo)":
+        "Backup (mirror playout)",
+    "Líneas, corresponsales o conexiones que hay que grabar a una hora. Al acabar, la grabación puede entrar sola en una lista auxiliar.":
+        "Lines, correspondents or remotes to record at a set time. When finished, the recording can go into an aux list by itself.",
+    "No hay grabaciones programadas. Pulsa «Añadir».":
+        "There are no scheduled recordings. Press “Add”.",
+    "Certificado de emisión…":
+        "Proof of play…",
+    "Ahora: %s":
+        "Now: %s",
+    "Ahora: ":
+        "Now: ",
+    "quedan %s":
+        "%s left",
+    "ERROR: %s":
+        "ERROR: %s",
+    "Auxiliares y botonera":
+        "Aux lists and cart wall",
+    "Grabaciones":
+        "Recordings",
+    "Importar una &pauta (música o publicidad)…":
+        "Import a &log (music or traffic)…",
+    "Pantalla de &locutor":
+        "&Presenter screen",
+    "Importar una pauta":
+        "Import a log",
+    "Música: una lista por hora":
+        "Music: one list per hour",
+    "Publicidad: una lista por corte (hora y minuto del bloque)":
+        "Traffic: one list per break (hour and minute of the block)",
+    "La que traiga el fichero (o su nombre)":
+        "The one in the file (or its name)",
+    "Esta:":
+        "This one:",
+    "Fichero exportado":
+        "Exported file",
+    "Es de":
+        "It is",
+    "Fecha":
+        "Date",
+    "Dejar las listas en":
+        "Put the lists in",
+    "Carpeta de los audios":
+        "Audio folder",
+    "Vale casi cualquier exportación de texto (MusicMaster, Selector, Powergold, el programa de publicidad): de cada línea se saca la hora y el audio, como ruta, como nombre de fichero o como número de cartucho (el fichero de la carpeta de los audios cuyo nombre empieza por él). Luego pon «Pauta importada» en el orden de la franja o del bloque, con esa carpeta.":
+        "Almost any text export works (MusicMaster, Selector, Powergold, the traffic system): from each line the time and the audio are taken, as a path, a file name or a cart number (the file in the audio folder whose name starts with it). Then set “Imported log” as the order of the time slot or block, with that folder.",
+    "Falta el fichero o la carpeta donde dejar las listas.":
+        "The file or the folder to put the lists in is missing.",
+    "Pauta importada: %s":
+        "Log imported: %s",
+    "Fechas ilegibles.":
+        "Unreadable dates.",
+    "Pauta importada: la lista que toca a cada hora":
+        "Imported log: the list for each hour",
+    "Pauta importada: la lista que toca en cada corte":
+        "Imported log: the list for each break",
+    "Cadena":
+        "Network",
+    "Elegir un fichero":
+        "Choose a file",
+    "Salida: con la emisión":
+        "Output: with the broadcast",
+    "Audios, carpeta o lista…":
+        "Audio files, folder or playlist…",
+    "Subir":
+        "Move up",
+    "Bajar":
+        "Move down",
+    "Punto de parada":
+        "Stop point",
+    "Clic: lanzar o parar. Clic derecho: asignar, etiqueta, bucle.":
+        "Click: fire or stop. Right click: assign, label, loop.",
+    "Sin audio: clic para asignar uno":
+        "No audio: click to assign one",
+    "Pautas importadas":
+        "Imported logs",
+    "Importar una pauta (música o publicidad)…":
+        "Import a log (music or traffic)…",
+    "vacía: la que traiga el fichero (o su nombre)":
+        "empty: the one in the file (or its name)",
+    "Importar":
+        "Import",
+    "Abrir para imprimir":
+        "Open to print",
+    # novedades de la 1.2
+    "Listas auxiliares: cuatro reproductores con su propia lista, en modo manual, asistido (encadena hasta un punto de parada) o automático. Mientras suenan, la emisión principal sigue igual, baja o se calla, sin perder nunca su hora.":
+        "Aux lists: four players with their own list, in manual, live assist (segues up to a stop point) or automatic mode. While they play, the main broadcast stays as it is, ducks or mutes, without ever losing its timing.",
+    "Botonera de 16 disparos para jingles, efectos y colchones, y preescucha por otra tarjeta.":
+        "A 16-button cart wall for jingles, effects and music beds, and preview through another sound card.",
+    "Intro de cada canción: se marca con un botón y sale su cuenta atrás para hablar encima.":
+        "Song intros: mark them with a button and get a countdown to talk over.",
+    "Pantalla de locutor (Ver > Pantalla de locutor, o /locutor en el panel web).":
+        "Presenter screen (View > Presenter screen, or /locutor in the web panel).",
+    "Detector de silencio: si la emisión se queda muda, entra sola una lista de emergencia.":
+        "Silence detector: if the broadcast goes silent, an emergency list goes on air by itself.",
+    "Enlace con la cadena: un evento puede engancharse a un stream o a una entrada de tarjeta durante un tiempo exacto.":
+        "Network join: an event can join a stream or a sound card input for an exact length of time.",
+    "Grabaciones programadas (líneas, corresponsales) que pueden entrar solas en una lista auxiliar, y logger de antena.":
+        "Scheduled recordings (lines, correspondents) that can go into an aux list by themselves, and an air logger.",
+    "Pautas importadas de los planificadores de música y de publicidad, y certificado de emisión de las cuñas.":
+        "Logs imported from music and traffic schedulers, and proof of play for the spots.",
+    "Reserva: un segundo GIMEL puede vigilar al principal y tomar el relevo si deja de emitir.":
+        "Backup: a second GIMEL can watch the main one and take over if it stops broadcasting.",
 }

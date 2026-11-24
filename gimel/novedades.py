@@ -23,6 +23,22 @@ from .idioma import N_
 MARCA = "version"                     # en la carpeta de datos: la ultima version que se abrio
 
 CAMBIOS = (                           # de la mas nueva a la mas vieja
+    ("1.2", (
+        N_("Listas auxiliares: cuatro reproductores con su propia lista, en modo manual, asistido "
+           "(encadena hasta un punto de parada) o automático. Mientras suenan, la emisión principal "
+           "sigue igual, baja o se calla, sin perder nunca su hora."),
+        N_("Botonera de 16 disparos para jingles, efectos y colchones, y preescucha por otra tarjeta."),
+        N_("Intro de cada canción: se marca con un botón y sale su cuenta atrás para hablar encima."),
+        N_("Pantalla de locutor (Ver > Pantalla de locutor, o /locutor en el panel web)."),
+        N_("Detector de silencio: si la emisión se queda muda, entra sola una lista de emergencia."),
+        N_("Enlace con la cadena: un evento puede engancharse a un stream o a una entrada de tarjeta "
+           "durante un tiempo exacto."),
+        N_("Grabaciones programadas (líneas, corresponsales) que pueden entrar solas en una lista "
+           "auxiliar, y logger de antena."),
+        N_("Pautas importadas de los planificadores de música y de publicidad, y certificado de emisión "
+           "de las cuñas."),
+        N_("Reserva: un segundo GIMEL puede vigilar al principal y tomar el relevo si deja de emitir."),
+    )),
     ("1.1", (
         N_("Los jingles se reparten bien: suenan todos los de la carpeta o la lista antes de que "
            "se repita ninguno. Antes unos pocos salían mucho más que el resto."),

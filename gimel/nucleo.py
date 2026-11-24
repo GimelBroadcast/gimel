@@ -11,13 +11,19 @@ import re
 import string
 import threading
 import time
+from datetime import datetime
 
 from . import NOMBRE, __version__
 from . import config as modconfig
 from . import idioma
 from . import motor as modmotor
 from . import rutas
+from . import certificado, pautas
+from .auxiliares import Auxiliares
 from .biblioteca import Biblioteca
+from .grabaciones import Grabaciones
+from .marcas import Marcas
+from .reserva import Reserva
 from .cue import Cues, Titulo
 from .emisor import Emisor
 from .icecast import Emisiones
@@ -47,6 +53,14 @@ class Nucleo:
         self.emisor = Emisor(self.cfg, self.bib, self.rot, self.motor, self.ffmpeg, soxr,
                              self.registro, self.cues, self.titulo)
         self.emisor.reabrir = self._reabrir
+        # listas auxiliares, botonera y preescucha: manejo en directo, con su propio fichero
+        self.aux = Auxiliares(self.datos, self.motor, self.bib, self.ffmpeg, soxr,
+                              cfg=lambda: self.cfg, registro=self.registro, titulo=self.titulo,
+                              emisor=self.emisor)
+        self.marcas = Marcas(os.path.join(self.datos, "marcas.json"))
+        self.aux.marcas = self.marcas
+        self.grabaciones = Grabaciones(self.ffmpeg, self.motor, lambda: self.cfg, self.aux, self.registro)
+        self.reserva = Reserva(self)
         self._lock = threading.RLock()
         self._vu = [0.0, 0.0, 1.0]
         self._t_vu = time.monotonic()
@@ -54,6 +68,10 @@ class Nucleo:
         self._aplicar_salida()
         self._calentar()
         self.emisor.arrancar_hilo()
+        self.aux.arrancar_hilo()
+        if self.ffmpeg:
+            self.grabaciones.arrancar_hilo()
+        self.reserva.arrancar_hilo()
 
     @property
     def error(self) -> str:
@@ -63,9 +81,12 @@ class Nucleo:
             "ffmpeg.exe en la carpeta del programa.")
 
     def cerrar(self) -> None:
+        self.reserva.cerrar()
         self.emisor.detener()
         time.sleep(0.5)
         self.emisor.parar_hilo()
+        self.aux.cerrar()
+        self.grabaciones.cerrar()
         self.emisiones.parar()
         self.motor.cerrar()
         self.cues.cerrar()
@@ -157,7 +178,69 @@ class Nucleo:
         foto["aviso_salida"] = self.aviso_salida
         foto["icecast"] = self.emisiones.estado()
         foto["error"] = self.error
+        foto["aux"] = self.aux.resumen()
+        foto["nivel_principal"] = self.motor.principal
+        a = foto.get("actual")
+        if a:
+            a = foto["actual"] = dict(a)
+            a["intro"] = self.marcas.intro(a.get("ruta", ""))
+        sig = next((f for f in foto.get("pauta") or [] if f["estado"] in ("plan", "prep", "prog")
+                    and f["tipo"] not in ("silencio", "cue", "jingle")), None)
+        foto["siguiente"] = sig
+        foto["reserva"] = self.reserva.estado()
+        g = self.grabaciones.estado()
+        foto["grabando"] = [x["nombre"] for x in g["en_curso"]] + ([N_("Logger de antena")] if g["logger"] else [])
         return foto
+
+    # ------------------------------------------------------------ intro, pautas, certificado
+
+    def marcar_intro(self, ruta: str = "", segundos=None):
+        """
+        Sin ruta: la intro de lo que suena en antena, aqui y ahora (se pulsa
+        justo cuando entra la voz). Devuelve (bien, mensaje).
+        """
+        if not ruta:
+            a = self.emisor.actual
+            if a is None or a.estado != "aire" or a.tipo != "cancion":
+                return False, tr("Ahora no suena ninguna canción.")
+            ruta = a.pista.ruta
+            segundos = max(0.0, self.motor.ahora() - a.t_ini)
+        try:
+            segundos = float(segundos)
+        except (TypeError, ValueError):
+            return False, tr("orden ilegible")
+        self.marcas.poner_intro(ruta, segundos)
+        self.aux.version += 1
+        if segundos <= 0.05:
+            return True, tr("Intro quitada.")
+        return True, tr("Intro de %s: %.1f s") % (os.path.basename(ruta), segundos)
+
+    def marcar_intro_preescucha(self):
+        """La intro del audio que se esta preescuchando, en el punto por el que va."""
+        with self.aux._lock:
+            t = self.aux.pre_toque
+            if t is None or not t.empezado:
+                return False, tr("No se está preescuchando nada.")
+            ruta, va = t.ruta, t.ofs + max(0.0, time.time() - t.t_ini)
+        return self.marcar_intro(ruta, va)
+
+    def importar_pauta(self, ruta: str, destino: str, tipo: str = "musica", fecha: str = "",
+                       audios: str = "") -> str:
+        f = None
+        if fecha:
+            f = datetime.strptime(fecha, "%Y-%m-%d").date()
+        return pautas.importar(ruta, destino, tipo, f, audios)
+
+    def certificado(self, desde: str, hasta: str, filtro: str = "") -> str:
+        d = datetime.strptime(desde, "%Y-%m-%d").date()
+        h = datetime.strptime(hasta or desde, "%Y-%m-%d").date()
+        if h < d:
+            d, h = h, d
+        return certificado.html_certificado(self.registro, d, h, filtro, self.cfg.emisora)
+
+    @staticmethod
+    def entradas() -> list:
+        return modmotor.entradas()
 
     # ------------------------------------------------------------ configuracion
 
@@ -225,8 +308,8 @@ class Nucleo:
         return r
 
     @staticmethod
-    def explorar(ruta: str = "") -> dict:
-        """Carpetas y audios de una ruta, para elegir desde el panel web."""
+    def explorar(ruta: str = "", todos: bool = False) -> dict:
+        """Carpetas y audios de una ruta (con `todos`, cualquier fichero), para elegir desde el panel web."""
         if not ruta:
             if os.name == "nt":
                 unidades = ["%s:\\" % u for u in string.ascii_uppercase if os.path.exists("%s:\\" % u)]
@@ -242,7 +325,7 @@ class Nucleo:
                     try:
                         if e.is_dir():
                             carpetas.append(e.path)
-                        elif rutas.es_audio(e.name) or rutas.es_lista(e.name):
+                        elif todos or rutas.es_audio(e.name) or rutas.es_lista(e.name):
                             ficheros.append(e.path)
                     except OSError:
                         continue

@@ -180,6 +180,175 @@ class FuenteFFmpeg:
         self._matar()
 
 
+class FuenteDirecto:
+    """
+    Audio EN DIRECTO durante un tiempo exacto: el stream de la cadena (network
+    join) o lo que entra por una tarjeta. Tres diferencias con un fichero:
+
+      - No se adelanta: de lo que llega solo se guarda el ultimo segundo, asi
+        que al entrar en antena suena lo de ahora y no lo de hace un rato
+        (aunque se haya preparado con mucha antelacion).
+      - Nunca se queda seca: si el stream se atasca o se cae, sale silencio
+        (y se reconecta), y la hora sigue cuadrando al frame.
+      - Dura exactamente `segundos`, venga lo que venga.
+
+    origen: una URL (o cualquier cosa que ffmpeg sepa abrir) o "entrada:API|nombre".
+    """
+
+    COLCHON = 1.0            # s por delante que se guardan al entrar en antena
+    TECHO = 3.0              # s por delante, como mucho, una vez en antena (relojes que no van a la par)
+
+    def __init__(self, ffmpeg: str, origen: str, segundos: float, fs: int = 48000):
+        self.ffmpeg = ffmpeg
+        self.origen = origen
+        self.fs = fs
+        self.total = max(0, int(round(segundos * fs)))
+        self.consumidos = 0
+        self.recibidos = 0
+        self.error = ""
+        self.fin_lectura = False
+        self._cola = deque()
+        self._n = 0                  # frames en la cola
+        self._lock = threading.Lock()
+        self._cerrar = False
+        self._empezada = False
+        self._proc = None
+        self._flujo = None
+        self._hilo = None
+
+    def preparar(self) -> None:
+        if self._hilo is not None:
+            return
+        self._hilo = threading.Thread(target=self._leer, daemon=True, name="directo")
+        self._hilo.start()
+
+    def _meter(self, a: np.ndarray) -> None:
+        with self._lock:
+            self._cola.append(a)
+            self._n += len(a)
+            self.recibidos += len(a)
+            tope = int((self.TECHO if self._empezada else self.COLCHON * 4) * self.fs)
+            while self._n > tope and len(self._cola) > 1:
+                self._n -= len(self._cola.popleft())
+
+    def _leer(self) -> None:
+        if self.origen.startswith("entrada:"):
+            self._de_tarjeta(self.origen[len("entrada:"):])
+            return
+        while not self._cerrar and self.consumidos < self.total:
+            orden = [self.ffmpeg, "-v", "error", "-nostdin"]
+            if self.origen.lower().startswith(("http://", "https://")):
+                orden += ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
+            orden += ["-i", self.origen, "-vn", "-ac", "2", "-ar", str(self.fs), "-f", "f32le", "pipe:1"]
+            try:
+                self._proc = subprocess.Popen(orden, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                              stdin=subprocess.DEVNULL, creationflags=SIN_VENTANA)
+            except OSError as e:
+                self.error = "no se pudo lanzar ffmpeg: %s" % e
+                return
+            resto = b""
+            salida = self._proc.stdout
+            try:
+                while not self._cerrar:
+                    b = salida.read(4096 * 8)
+                    if not b:
+                        break
+                    if resto:
+                        b = resto + b
+                    sobra = len(b) % 8
+                    resto = b[len(b) - sobra:] if sobra else b""
+                    self._meter(np.frombuffer(b, dtype="<f4", count=(len(b) - sobra) // 4).reshape(-1, 2))
+            except Exception as e:
+                self.error = str(e)
+            finally:
+                self._matar()
+            if not self._cerrar:
+                self.error = self.error or "el directo se ha cortado"
+                time.sleep(2.0)                           # y se vuelve a intentar mientras dure
+
+    def _de_tarjeta(self, quien: str) -> None:
+        try:
+            import sounddevice as sd
+            from .motor import buscar_entrada
+            api, _, nombre = quien.partition("|")
+            d = buscar_entrada(api, nombre)
+            if d is None:
+                self.error = "no hay ninguna entrada de audio"
+                return
+            canales = 2 if d["canales"] >= 2 else 1
+
+            def cb(datos, frames, tinfo, estado):
+                a = np.array(datos, dtype=np.float32)
+                if canales == 1:
+                    a = np.repeat(a, 2, axis=1)
+                self._meter(a[:, :2])
+
+            self._flujo = sd.InputStream(samplerate=self.fs, device=d["indice"], channels=canales,
+                                         dtype="float32", blocksize=1024, callback=cb)
+            self._flujo.start()
+        except Exception as e:
+            self.error = str(e)
+
+    def _matar(self) -> None:
+        p = self._proc
+        if p is not None:
+            try:
+                if p.poll() is None:
+                    p.kill()
+            except Exception:
+                pass
+
+    def lista(self) -> bool:
+        return True                  # si no hay nada, sale silencio: nunca hace esperar
+
+    @property
+    def agotada(self) -> bool:
+        return self.consumidos >= self.total
+
+    def leer(self, n: int, bloquear: bool = False) -> np.ndarray:
+        if self._hilo is None:
+            self.preparar()
+        n = min(n, self.total - self.consumidos)
+        if n <= 0:
+            return VACIO
+        if bloquear and not self._empezada:               # simulacion: que haya llegado algo
+            limite = time.monotonic() + 10.0
+            while self.recibidos < self.fs * self.COLCHON and time.monotonic() < limite and not self.error:
+                time.sleep(0.005)
+        salida = np.zeros((n, 2), dtype=np.float32)
+        with self._lock:
+            if not self._empezada:
+                self._empezada = True
+                tope = int(self.COLCHON * self.fs)
+                while self._n > tope and len(self._cola) > 1:
+                    self._n -= len(self._cola.popleft())
+            k = 0
+            while k < n and self._cola:
+                a = self._cola[0]
+                tomar = min(n - k, len(a))
+                salida[k:k + tomar] = a[:tomar]
+                k += tomar
+                if tomar == len(a):
+                    self._cola.popleft()
+                else:
+                    self._cola[0] = a[tomar:]
+                self._n -= tomar
+        self.consumidos += n
+        return salida
+
+    def cerrar(self) -> None:
+        self._cerrar = True
+        self._matar()
+        f = self._flujo
+        self._flujo = None
+        if f is not None:
+            try:
+                f.abort()
+                f.close()
+            except Exception:
+                pass
+
+
 class FuenteMemoria:
     """Audio ya sintetizado (los tonos DTMF de un CUE)."""
 

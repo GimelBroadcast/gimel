@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GIMEL</title>
+<style>
+  :root { --fondo: #0b0d10; --texto: #e6e9ee; --tenue: #8b96a5; --acento: #ffb000; --ambar: #fbbf24; --aux: #c084fc; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--fondo); color: var(--texto); font-family: "Segoe UI", system-ui, sans-serif;
+         padding: 3vh 3vw; display: flex; flex-direction: column; gap: 1.2vh; overflow: hidden; }
+  .mono { font-family: "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .arriba { display: flex; align-items: center; gap: 2vw; }
+  .emisora { color: var(--acento); font-weight: 700; font-size: 2.2vh; flex: 1; }
+  .aire { padding: .6vh 1.4vw; border-radius: 6px; font-weight: 700; letter-spacing: .14em; font-size: 1.6vh;
+          background: #2a2f38; color: var(--tenue); border: 1px solid #2a323d; }
+  .aire.si { background: #7f1d1d; color: #fff; border-color: #ef4444; box-shadow: 0 0 18px rgba(239,68,68,.6); }
+  .reloj { font-size: 9vh; font-weight: 700; line-height: 1; }
+  .chip { display: inline-block; padding: .2vh .8vw; border-radius: 4px; font-size: 1.4vh; font-weight: 700; letter-spacing: .06em;
+          text-transform: uppercase; background: #3b82f6; color: #fff; width: fit-content; }
+  .titulo { font-size: 6vh; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .artista { font-size: 3.4vh; color: var(--tenue); min-height: 4vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .barra { height: 2.6vh; background: #14181e; border-radius: 1.3vh; overflow: hidden; border: 1px solid #2a323d; }
+  .barra div { height: 100%; width: 0; background: linear-gradient(90deg, #2563eb, #60a5fa); }
+  .cuentas { display: flex; gap: 4vw; align-items: flex-end; }
+  .rot { color: var(--tenue); font-weight: 700; letter-spacing: .2em; font-size: 1.6vh; }
+  .grande { font-size: 15vh; font-weight: 700; line-height: 1; }
+  .intro { color: var(--ambar); }
+  .ancla { margin-left: auto; text-align: right; }
+  .ancla .grande { font-size: 10vh; }
+  .hueco { flex: 1; }
+  .despues { font-size: 2.8vh; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .aux { font-size: 2.4vh; color: var(--aux); font-weight: 700; min-height: 3vh; }
+  .alarma { background: #7f1d1d; border: 1px solid #ef4444; border-radius: 8px; padding: 1.2vh 1.4vw; font-size: 2.4vh; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="arriba">
+  <span class="emisora" id="emisora"></span>
+  <span class="aire" id="aire"></span>
+  <span class="reloj mono" id="reloj">--:--:--</span>
+</div>
+<span class="chip" id="tipo">—</span>
+<div class="titulo" id="titulo"></div>
+<div class="artista" id="artista"></div>
+<div class="barra"><div id="barra"></div></div>
+<div class="cuentas">
+  <div><div class="rot" id="r-queda"></div><div class="grande mono" id="resta">--:--</div></div>
+  <div id="c-intro" hidden><div class="rot">INTRO</div><div class="grande mono intro" id="intro"></div></div>
+  <div class="ancla"><div class="rot" id="r-ancla"></div><div class="grande mono" id="ancla">--:--</div></div>
+</div>
+<div class="hueco"></div>
+<div class="despues" id="despues"></div>
+<div class="aux" id="aux"></div>
+<div class="alarma" id="alarma" hidden></div>
+<script>
+'use strict';
+/* Pantalla de locutor del panel web: lo mismo que la de la ventana de escritorio,
+   para un monitor de estudio con un navegador. Lee /api/estado como el panel. */
+let TEXTOS = {}, E = null, TZ = 0, DESFASE = 0;
+const T = s => TEXTOS[s] || s;
+const F = (s, ...v) => { let i = 0; return T(s).replace(/%[sdg]/g, () => v[i++]); };
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2, '0');
+const ahora = () => (Date.now() + DESFASE) / 1000;
+const hora = t => { const d = new Date((t + TZ) * 1000); return pad(d.getUTCHours()) + ':' + pad(d.getUTCMinutes()) + ':' + pad(d.getUTCSeconds()); };
+const mmss = s => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60);
+  return m >= 60 ? Math.floor(m / 60) + ':' + pad(m % 60) + ':' + pad(s % 60) : m + ':' + pad(s % 60); };
+const COLOR = {cancion: '#3b82f6', jingle: '#a855f7', senal: '#f59e0b', evento: '#14b8a6', cuna: '#ef4444', relleno: '#f97316',
+               jingle_publi: '#ec4899', enlace: '#84cc16'};
+const NOMBRES = {cancion: 'Canción', jingle: 'Jingle', senal: 'Señal', evento: 'Evento', cuna: 'Cuña', relleno: 'Relleno',
+                 jingle_publi: 'Jingle', enlace: 'Cadena'};
+
+async function refrescar() {
+  try {
+    const r = await fetch('/api/estado');
+    if (r.status === 401) { $('#titulo').textContent = T('Entra primero en el panel web (tiene contraseña).'); return; }
+    E = await r.json();
+    TZ = E.tz || 0;
+    DESFASE = E.reloj * 1000 - Date.now();
+  } catch (e) { $('#aire').textContent = T('SIN CONEXIÓN'); }
+}
+
+function tic() {
+  const t = ahora();
+  $('#reloj').textContent = hora(t);
+  if (!E) return;
+  const emite = !!E.emitiendo;
+  document.title = (E.emisora || 'GIMEL') + ' · ' + T('Pantalla de locutor');
+  $('#emisora').textContent = E.emisora || '';
+  $('#aire').textContent = emite ? T('EN EMISIÓN') : T('PARADO');
+  $('#aire').className = 'aire' + (emite ? ' si' : '');
+  $('#r-queda').textContent = T('QUEDA');
+  const a = E.actual;
+  $('#tipo').textContent = a ? T(NOMBRES[a.tipo] || a.tipo) : '—';
+  $('#tipo').style.background = a ? (COLOR[a.tipo] || '#4b5563') : '#4b5563';
+  if (a && emite) {
+    const va = Math.max(0, t - a.t);
+    $('#titulo').textContent = a.titulo;
+    $('#artista').textContent = a.artista || '';
+    $('#barra').style.width = a.dur ? Math.min(100, 100 * va / a.dur) + '%' : '0';
+    $('#resta').textContent = mmss(a.dur - va);
+    const hay = a.intro > va;
+    $('#c-intro').hidden = !hay;
+    $('#intro').textContent = hay ? mmss(a.intro - va) : '';
+  } else {
+    $('#titulo').textContent = emite ? '…' : T('Parado');
+    $('#artista').textContent = '';
+    $('#barra').style.width = '0';
+    $('#resta').textContent = '--:--';
+    $('#c-intro').hidden = true;
+  }
+  const an = E.ancla;
+  if (emite && an) {
+    $('#r-ancla').textContent = an.clase === 'senal' ? T('SEÑAL HORARIA') : (an.nombre || T('BLOQUE')).toUpperCase();
+    $('#ancla').textContent = mmss(an.t - t);
+  } else {
+    $('#r-ancla').textContent = T('HORA EN PUNTO');
+    $('#ancla').textContent = mmss(3600 - ((t + TZ) % 3600));
+  }
+  const s = E.siguiente;
+  $('#despues').textContent = s && emite ? F('Después:  %s%s   ·   %s', s.titulo, s.artista ? '  —  ' + s.artista : '', hora(s.t)) : '';
+  const aux = E.aux || [];
+  $('#aux').textContent = aux.filter(x => !x.emergencia).map(x => x.nombre + ': ' + x.titulo + (x.resta ? '  -' + mmss(x.resta) : '')).join('    ');
+  const alarmas = [];
+  if (aux.some(x => x.emergencia)) alarmas.push(T('LISTA DE EMERGENCIA EN ANTENA'));
+  if (E.reserva && E.reserva.relevo) alarmas.push(T('ESTA ES LA RESERVA Y ESTÁ EN ANTENA'));
+  if (E.error) alarmas.push(E.error);
+  $('#alarma').hidden = !alarmas.length;
+  $('#alarma').textContent = alarmas.join('   ·   ');
+}
+
+(async () => {
+  try { const r = await (await fetch('/api/textos')).json(); TEXTOS = r.textos || {}; document.documentElement.lang = r.idioma || 'es'; } catch (e) {}
+  await refrescar();
+  setInterval(refrescar, 500);
+  setInterval(tic, 200);
+  tic();
+})();
+</script>
+</body>
+</html>

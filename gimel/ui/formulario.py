@@ -177,6 +177,8 @@ class Formulario(QWidget):
             return w
         if tipo == "salida":
             return self._salida(clave, obj, v)
+        if tipo == "entrada":
+            return self._entrada(clave, v)
         if tipo == "parrafo":
             w = QPlainTextEdit()
             w.setPlainText(v)
@@ -189,6 +191,23 @@ class Formulario(QWidget):
             w.setEchoMode(QLineEdit.EchoMode.Password)
         w.textEdited.connect(lambda x, k=clave: self._escribir(k, x))
         return w
+
+    def _entrada(self, clave: str, v) -> QWidget:
+        """Desplegable con las entradas de audio de todas las API: el valor es "API|nombre"."""
+        opciones = [("", tr("Predeterminada del sistema"))]
+        vistas = set()
+        for e in self.nucleo.entradas():
+            valor = "%s|%s" % (e["api"], e["nombre"])
+            vistas.add(valor)
+            opciones.append((valor, "%s  ·  %s" % (e["api"].replace("Windows ", ""), e["nombre"])))
+        if v and v not in vistas:
+            opciones.append((v, v.replace("|", "  ·  ") + "   " + tr("(no está)")))
+        w = Desplegable()
+        w.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        w.setMinimumWidth(340)
+        w.poner_opciones(opciones, v)
+        w.currentIndexChanged.connect(lambda _, k=clave, w=w: self._escribir(k, w.currentData()))
+        return self._con_hueco(w)
 
     def _salida(self, clave: str, obj, v) -> QWidget:
         """Desplegable con las tarjetas del sistema de audio elegido."""

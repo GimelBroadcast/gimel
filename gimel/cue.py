@@ -228,11 +228,27 @@ class Titulo:
         self.cfg = cfg_meta
         self.ultimo = ""
         self.extra = None                 # funcion(texto): Icecast tambien lo quiere
+        # Una lista auxiliar que anuncia lo suyo se queda el titulo mientras suena: lo que
+        # anuncie entretanto la principal (que sigue por debajo) se guarda para luego.
+        self.retenido = False
+        self._pendiente = None
 
     def configurar(self, cfg_meta) -> None:
         self.cfg = cfg_meta
 
-    def anunciar(self, tipo: str, titulo: str, artista: str, emisora: str) -> None:
+    def soltar(self) -> bool:
+        """La auxiliar suelta el titulo: sale lo ultimo de la principal. False si no habia nada guardado."""
+        self.retenido = False
+        p, self._pendiente = self._pendiente, None
+        if p is None:
+            return False
+        self.anunciar(*p)
+        return True
+
+    def anunciar(self, tipo: str, titulo: str, artista: str, emisora: str, aux: bool = False) -> None:
+        if self.retenido and not aux:
+            self._pendiente = (tipo, titulo, artista, emisora)
+            return
         c = self.cfg
         datos = {"titulo": titulo, "artista": artista, "emisora": emisora, "tipo": tipo}
         if tipo == "cancion":

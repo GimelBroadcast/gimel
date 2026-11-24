@@ -40,9 +40,11 @@ from .. import idioma
 from .. import novedades as modnovedades
 from ..idioma import N_, tr
 from . import estilo
-from .paginas import (PaginaAjustes, PaginaCue, PaginaEmision, PaginaRegistro, PaginaSenales,
-                      boton, pagina_eventos, pagina_franjas, pagina_icecast, pagina_publicidad,
-                      reestilar, texto_icecast)
+from .auxiliares import PaginaAuxiliares
+from .locutor import PantallaLocutor
+from .paginas import (PaginaAjustes, PaginaCue, PaginaEmision, PaginaGrabaciones, PaginaRegistro,
+                      PaginaSenales, boton, pagina_eventos, pagina_franjas, pagina_icecast,
+                      pagina_publicidad, reestilar, texto_icecast)
 from .widgets import Lampara, hms
 
 DIAS = (N_("lunes"), N_("martes"), N_("miércoles"), N_("jueves"), N_("viernes"), N_("sábado"),
@@ -104,9 +106,10 @@ class Contexto:
 
 
 class Ventana(QMainWindow):
-    PAGINAS = (("emision", N_("Emisión")), ("franjas", N_("Franjas")),
-               ("senales", N_("Señales horarias")),
+    PAGINAS = (("emision", N_("Emisión")), ("auxiliares", N_("Auxiliares y botonera")),
+               ("franjas", N_("Franjas")), ("senales", N_("Señales horarias")),
                ("publicidad", N_("Publicidad / desconexión")), ("eventos", N_("Eventos")),
+               ("grabaciones", N_("Grabaciones")),
                ("cue", N_("CUE y título")), ("icecast", N_("Icecast")), ("ajustes", N_("Ajustes")),
                ("registro", N_("Registro")))
 
@@ -120,6 +123,7 @@ class Ventana(QMainWindow):
         self._oscura = False
         self._ocupada = False                 # a medio buscar o descargar una actualizacion
         self._sin_preguntas = False           # cerrar sin mas: lo hace la actualizacion, que ya ha preguntado
+        self.locutor = None                   # la pantalla de locutor, cuando se abre
         self.ctx = Contexto(self, nucleo, web)
         self.setWindowTitle("%s %s" % (NOMBRE, __version__))
         self.setWindowIcon(icono())
@@ -164,8 +168,9 @@ class Ventana(QMainWindow):
 
         # Las paginas de configuracion se montan la primera vez que se abren:
         # montarlas todas al arrancar tenia la ventana varios segundos en blanco.
-        self._fabricas = {"franjas": pagina_franjas, "senales": PaginaSenales,
-                          "publicidad": pagina_publicidad, "eventos": pagina_eventos,
+        self._fabricas = {"auxiliares": PaginaAuxiliares, "franjas": pagina_franjas,
+                          "senales": PaginaSenales, "publicidad": pagina_publicidad,
+                          "eventos": pagina_eventos, "grabaciones": PaginaGrabaciones,
                           "cue": PaginaCue, "icecast": pagina_icecast, "ajustes": PaginaAjustes,
                           "registro": PaginaRegistro}
         self._montadas = {}               # nombre -> pagina
@@ -192,6 +197,8 @@ class Ventana(QMainWindow):
         m.addAction(tr("&Importar configuración…"), self._importar)
         m.addAction(tr("&Exportar configuración…"), self._exportar)
         m.addSeparator()
+        m.addAction(tr("Importar una &pauta (música o publicidad)…"), self._importar_pauta)
+        m.addSeparator()
         m.addAction(tr("Abrir la &carpeta de datos"), self._abrir_datos)
         m.addSeparator()
         m.addAction(tr("&Salir"), self.close).setShortcut("Ctrl+Q")
@@ -208,9 +215,12 @@ class Ventana(QMainWindow):
             # triggered manda un bool: sin el primer argumento, caeria en i
             a = m.addAction(tr(texto), lambda marcada=False, i=i: self._ir(i))
             a.setCheckable(True)
-            a.setShortcut("Ctrl+%d" % (i + 1))
+            if i < 10:
+                a.setShortcut("Ctrl+%d" % ((i + 1) % 10))
             self.a_paginas.addAction(a)
         m.addSeparator()
+        a = m.addAction(tr("Pantalla de &locutor"), self._abrir_locutor)
+        a.setShortcut("F2")
         a = m.addAction(tr("Abrir el panel &web en el navegador"), self._abrir_web)
         a.setEnabled(self.web is not None and bool(self.web.url))
         a = m.addAction(tr("&Pantalla completa"), self._pantalla_completa)
@@ -444,6 +454,71 @@ class Ventana(QMainWindow):
     def _abrir_datos(self) -> None:
         QDesktopServices.openUrl(QUrl.fromLocalFile(self.nucleo.datos))
 
+    def _abrir_locutor(self) -> None:
+        if self.locutor is None:
+            self.locutor = PantallaLocutor(self.windowIcon())
+        self.locutor.show()
+        self.locutor.raise_()
+        self.locutor.activateWindow()
+
+    def _importar_pauta(self) -> None:
+        """La pauta del dia de un planificador de musica o de publicidad, a una lista por hora o por corte."""
+        from PyQt6.QtWidgets import QComboBox, QDateEdit, QDialogButtonBox, QFormLayout, QLineEdit
+        from PyQt6.QtCore import QDate
+        from .widgets import CampoRuta
+        d = QDialog(self)
+        d.setWindowTitle(tr("Importar una pauta"))
+        d.setMinimumWidth(640)
+        f = QFormLayout(d)
+        f.setSpacing(10)
+        fichero = CampoRuta("fichero")
+        tipo = QComboBox()
+        tipo.addItem(tr("Música: una lista por hora"), "musica")
+        tipo.addItem(tr("Publicidad: una lista por corte (hora y minuto del bloque)"), "publicidad")
+        destino = CampoRuta("carpeta")
+        audios = CampoRuta("carpeta")
+        fecha = QDateEdit(QDate.currentDate())
+        fecha.setCalendarPopup(True)
+        fecha.setDisplayFormat("dd/MM/yyyy")
+        usar_fecha = QComboBox()
+        usar_fecha.addItem(tr("La que traiga el fichero (o su nombre)"), False)
+        usar_fecha.addItem(tr("Esta:"), True)
+        fila_fecha = QWidget()
+        ff = QHBoxLayout(fila_fecha)
+        ff.setContentsMargins(0, 0, 0, 0)
+        ff.addWidget(usar_fecha)
+        ff.addWidget(fecha)
+        ff.addStretch(1)
+        f.addRow(tr("Fichero exportado"), fichero)
+        f.addRow(tr("Es de"), tipo)
+        f.addRow(tr("Fecha"), fila_fecha)
+        f.addRow(tr("Dejar las listas en"), destino)
+        f.addRow(tr("Carpeta de los audios"), audios)
+        nota = QLabel(tr("Vale casi cualquier exportación de texto (MusicMaster, Selector, Powergold, el programa de "
+                         "publicidad): de cada línea se saca la hora y el audio, como ruta, como nombre de fichero o "
+                         "como número de cartucho (el fichero de la carpeta de los audios cuyo nombre empieza por él). "
+                         "Luego pon «Pauta importada» en el orden de la franja o del bloque, con esa carpeta."))
+        nota.setObjectName("ayuda")
+        nota.setWordWrap(True)
+        f.addRow(nota)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(d.accept)
+        bb.rejected.connect(d.reject)
+        f.addRow(bb)
+        if d.exec() != QDialog.DialogCode.Accepted:
+            return
+        if not fichero.valor() or not destino.valor():
+            self.avisar(tr("Falta el fichero o la carpeta donde dejar las listas."), True)
+            return
+        try:
+            texto = self.nucleo.importar_pauta(fichero.valor(), destino.valor(), tipo.currentData(),
+                                               fecha.date().toString("yyyy-MM-dd") if usar_fecha.currentData() else "",
+                                               audios.valor())
+        except Exception as e:
+            self.avisar(tr("No se ha podido importar: %s") % e, True)
+            return
+        self.avisar(tr("Pauta importada: %s") % texto)
+
     def _abrir_web(self) -> None:
         QDesktopServices.openUrl(QUrl(self.web.url))
 
@@ -634,8 +709,11 @@ class Ventana(QMainWindow):
         actual = self.pila.currentWidget()
         if actual is self.p_emision:
             self.p_emision.actualizar(e)
-        elif actual is self._montadas.get("cue"):
+        elif actual in (self._montadas.get("cue"), self._montadas.get("auxiliares"),
+                        self._montadas.get("grabaciones"), self._montadas.get("ajustes")):
             actual.actualizar(e)
+        if self.locutor is not None:
+            self.locutor.actualizar(e)
         flujos = e.get("icecast") or []
         if actual is self._montadas.get("icecast"):
             actual.cabecera.setText(texto_icecast(flujos, True) if flujos
@@ -673,6 +751,8 @@ class Ventana(QMainWindow):
             if r == QMessageBox.StandardButton.Yes:
                 self.guardar()
         self._reloj_ui.stop()
+        if self.locutor is not None:
+            self.locutor.close()
         ev.accept()
 
 

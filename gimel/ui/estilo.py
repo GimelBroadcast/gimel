@@ -21,12 +21,12 @@ ROJO = "#ef4444"
 COLOR_TIPO = {
     "cancion": "#3b82f6", "jingle": "#a855f7", "senal": "#f59e0b", "evento": "#14b8a6",
     "cuna": "#ef4444", "relleno": "#f97316", "jingle_publi": "#ec4899",
-    "silencio": "#4b5563", "cue": "#22d3ee",
+    "silencio": "#4b5563", "cue": "#22d3ee", "enlace": "#84cc16",
 }
 NOMBRE_TIPO = {
     "cancion": N_("CANCIÓN"), "jingle": N_("JINGLE"), "senal": N_("SEÑAL"), "evento": N_("EVENTO"),
     "cuna": N_("CUÑA"), "relleno": N_("RELLENO"), "jingle_publi": N_("JINGLE"),
-    "silencio": N_("SILENCIO"), "cue": N_("CUE"),
+    "silencio": N_("SILENCIO"), "cue": N_("CUE"), "enlace": N_("CADENA"),
 }
 TEXTO_OSCURO = ("senal", "cue")           # tipos cuyo color pide letra oscura encima
 
